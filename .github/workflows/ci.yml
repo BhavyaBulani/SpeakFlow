@@ -1,0 +1,81 @@
+name: CI
+
+# Mirrors `npm run verify` (README §7) step by step rather than calling it as
+# one command. Same checks, but a failure points at the exact step instead of
+# one opaque red X, which is what makes CI output worth reading.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref instead of burning minutes on stale code.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (lint, types, tests, build, secret scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20.19+ is required by package.json engines. 22 is the current LTS.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # `npm ci` (not `install`) so the lockfile is honoured exactly, and it
+      # fails loudly if package.json and package-lock.json have drifted apart.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Must run after the build: it scans dist/client for leaked secrets.
+      - name: Check bundle for secrets
+        run: npm run check:bundle
+
+      - name: Validate extension
+        run: npm run check:extension
+
+  e2e:
+    name: browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The full Chromium build, not chromium-headless-shell: extensions cannot
+      # load in the shell build. scripts/e2e-browser.mjs needs a real browser,
+      # and it is the only check that would catch a blank #root mount.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and run browser end-to-end checks
+        run: npm run test:e2e
