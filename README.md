@@ -66,20 +66,22 @@ degrades to *Browser speech* / *Demo transcript* rather than pretending.
 
 ```bash
 npm install
-cp .env.example .env      # Windows: copy .env.example .env
-# put OPENAI_API_KEY=sk-... in .env  (optional - see below)
+copy .env.example .env    # Windows cmd. Git Bash / WSL / macOS: cp .env.example .env
 npm run dev               # API on :8787, UI on http://localhost:5173
 ```
 
-Without a key the app still starts and the UI works, but replies/translation return a labelled
-"provider not configured" state. To explore the full pipeline with no credentials:
+**No key is required to start.** With a bare `.env` the app runs and reports
+transcription and replies as unconfigured — in words, rather than faking them.
 
-```bash
-# .env
-MOCK_AI=1
-```
+Two free ways to get a working pipeline:
 
-then in Settings pick **Demo transcript**. Replies will be clearly badged `MOCK AI`.
+| Path | Set in `.env` | Cost |
+|---|---|---|
+| Fully local (best for ₹0) | `STT_PROVIDER=whisper-cpp` + `AI_PROVIDER=local` | ₹0, no quota — `docs/LOCAL_STT.md`, `docs/LOCAL_MODEL.md` |
+| Labelled demo | `MOCK_AI=1`, then pick *Demo transcript* in Settings | ₹0, replies badged `MOCK AI` |
+
+`OPENAI_API_KEY` is **paid** — billed per audio minute and per token. It is not
+needed to run the app; it only adds true WebRTC interim partials (see §5).
 
 ### Commands
 
@@ -168,7 +170,7 @@ being billed.
 | `PORT` | `8787` | API port |
 | `NODE_ENV` | `development` | `production` tightens logging |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Allowlist; anything else gets 403 |
-| `OPENAI_API_KEY` | — | **server-only**. Enables replies, translation and streaming |
+| `OPENAI_API_KEY` | — | **server-only, paid.** Enables replies, translation and WebRTC streaming. Never required — see §2 for the free paths |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | For a gateway/proxy |
 | `OPENAI_REPLY_MODEL` | `gpt-4o-mini` | Reply + translation model (needs Structured Outputs) |
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-4o-transcribe` | Live transcription model |
@@ -324,9 +326,14 @@ Start command:  npm start
 Health check:   /api/health
 ```
 
-Set in the Render dashboard: `OPENAI_API_KEY`, `APP_ACCESS_TOKEN`, `NODE_ENV=production`,
-`CORS_ORIGINS=https://your-frontend.vercel.app`, plus any model overrides.
-Render injects `PORT`; the server honours it.
+Set in the Render dashboard: `NODE_ENV=production`, `CORS_ORIGINS=https://your-frontend.vercel.app`,
+`APP_ACCESS_TOKEN` if you use one, plus any model overrides. Render injects `PORT`; the server
+honours it.
+
+`OPENAI_API_KEY` is **optional and paid**. Note that the local routes cannot carry a deployment:
+`.local-models/` is gitignored, so `whisper-cpp` has no recogniser on a hosted box and a local LLM
+has no server to call. A deployment therefore needs a hosted provider — either a free-tier key such
+as Groq (`STT_PROVIDER=openai-compatible` + `STT_API_KEY`) or the paid OpenAI key.
 
 ### Frontend only — Vercel
 
