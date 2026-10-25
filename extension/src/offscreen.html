@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SpeakFlow offscreen audio pipeline</title>
+  </head>
+  <body>
+    <!--
+      This page is never shown. It exists because a Manifest V3 service worker
+      cannot hold a MediaStream or an RTCPeerConnection: getUserMedia for tab
+      audio and the WebRTC session both have to live in a document.
+    -->
+    <script src="offscreen.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,55 @@
+{
+  "_comment": "Ground-truth sentences for local STT accuracy measurement. Synthesised with Windows SAPI by scripts/make-test-corpus.ps1, so the reference text is exactly known. Chosen to mirror what SpeakFlow actually hears: professional call sentences with deadlines, numbers, technical terms and clarifications. Synthetic speech only - no real call audio, no private data.",
+  "sentences": [
+    {
+      "id": "c01",
+      "text": "Can you explain why the application is taking longer to load today",
+      "note": "the original single-sentence test; plain question"
+    },
+    {
+      "id": "c02",
+      "text": "We need to move the deadline to Friday because the API integration slipped",
+      "note": "deadline plus a technical term (API) plus a cause"
+    },
+    {
+      "id": "c03",
+      "text": "I am not sure what you mean by that exactly could you clarify",
+      "note": "clarification request; a fast-path library category"
+    },
+    {
+      "id": "c04",
+      "text": "Could you confirm the next step and who is picking it up",
+      "note": "next-step confirmation"
+    },
+    {
+      "id": "c05",
+      "text": "The audio is breaking up a little on my side can you repeat that",
+      "note": "audio trouble; hard words for a small model"
+    },
+    {
+      "id": "c06",
+      "text": "Our team can deliver the first milestone by the end of next week",
+      "note": "commitment with a date range"
+    },
+    {
+      "id": "c07",
+      "text": "That estimate was based on the original scope we agreed in January",
+      "note": "month name and scope language"
+    },
+    {
+      "id": "c08",
+      "text": "I will check with the backend team and get back to you tomorrow",
+      "note": "the safest holding reply; very common in the reply library"
+    },
+    {
+      "id": "c09",
+      "text": "We also need to add reporting to the same sprint",
+      "note": "scope creep; an out-of-scope library category"
+    },
+    {
+      "id": "c10",
+      "text": "Thanks for the update I appreciate you flagging that early",
+      "note": "acknowledgement of feedback"
+    }
+  ]
+}

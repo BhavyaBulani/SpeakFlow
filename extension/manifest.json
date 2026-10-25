@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "SpeakFlow AI — Tab Audio Bridge",
+  "version": "1.0.0",
+  "description": "Captures the meeting tab you choose and streams its audio to SpeakFlow AI, so you get an English reply script while the client is still speaking.",
+  "minimum_chrome_version": "116",
+  "permissions": ["tabCapture", "offscreen", "storage", "scripting", "tabs"],
+  "host_permissions": ["https://api.openai.com/*"],
+  "optional_host_permissions": ["http://localhost/*", "https://*/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "SpeakFlow AI — capture this tab's audio"
+  }
+}

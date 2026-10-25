@@ -1,0 +1,44 @@
+# Render blueprint for SpeakFlow AI.
+#
+# Single-service deployment: the Express server also serves the built SPA, so no
+# CORS_ORIGINS juggling is needed. Verified locally with the exact build/start
+# commands below; NOT yet deployed from this workspace (no credentials).
+#
+# Usage: Render Dashboard -> New -> Blueprint -> point at this repo.
+services:
+  - type: web
+    name: speakflow-api
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # --- required for real functionality ---------------------------------
+      # Set these in the Render dashboard; they are never committed.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APP_ACCESS_TOKEN
+        sync: false
+
+      # --- optional tuning -------------------------------------------------
+      - key: OPENAI_REPLY_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_TRANSCRIBE_MODEL
+        value: gpt-4o-transcribe
+      - key: REALTIME_SILENCE_MS
+        value: "320"
+      - key: MAX_TRANSCRIPT_CHARS
+        value: "4000"
+      - key: AI_RATE_LIMIT_MAX
+        value: "40"
+
+      # For a split deployment (SPA elsewhere) set this to the exact frontend
+      # origin, e.g. https://speakflow.vercel.app - no wildcards.
+      - key: CORS_ORIGINS
+        sync: false

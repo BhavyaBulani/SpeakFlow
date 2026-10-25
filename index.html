@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="SpeakFlow AI - live call copilot that gives you a safe English script while the client is still speaking."
+    />
+    <title>SpeakFlow AI — Live Call Copilot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Unstyled-by-JS fallback so a broken boot is readable, not a blank page. */
+      #boot-error {
+        display: none;
+        max-width: 60rem;
+        margin: 3rem auto;
+        padding: 1.25rem 1.5rem;
+        font: 14px/1.6 ui-monospace, "Cascadia Mono", Menlo, monospace;
+        color: #ffd7d7;
+        background: #1a1113;
+        border: 1px solid rgba(255, 143, 143, 0.4);
+        border-radius: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      /*
+        Static boot shell. React replaces this on its first render.
+        Purpose: the page paints something meaningful immediately instead of a
+        white flash, and a blank screen can never be mistaken for a loaded app.
+      */
+      #boot-shell {
+        max-width: 34rem;
+        margin: 18vh auto 0;
+        padding: 0 1.5rem;
+        font: 15px/1.6 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #7d8a9d;
+        text-align: center;
+      }
+      #boot-shell strong {
+        display: block;
+        margin-bottom: 0.4rem;
+        color: #eef2f8;
+        font-size: 19px;
+        letter-spacing: -0.01em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot-shell">
+        <strong>Starting SpeakFlow AI…</strong>
+        Preparing the live call workspace.
+      </div>
+    </div>
+    <div id="boot-error" role="alert" aria-live="assertive"></div>
+
+    <!--
+      Honest failure reporting. If the app bundle throws before React can mount,
+      the user (and anyone debugging) sees the reason instead of a blank screen.
+      This never hides an error and never pretends the app started.
+    -->
+    <script>
+      (function () {
+        var box = document.getElementById('boot-error');
+        var shown = false;
+
+        function show(title, detail) {
+          if (shown) return;
+          shown = true;
+          if (!box) return;
+          box.textContent =
+            title +
+            '\n\n' +
+            detail +
+            '\n\nCheck the browser console for the full stack trace, then reload.';
+          box.style.display = 'block';
+        }
+
+        window.addEventListener('error', function (event) {
+          // Only real script errors; ignore failed resource loads (e.g. blocked fonts).
+          if (!event.message) return;
+          var where = event.filename ? event.filename + ':' + event.lineno + ':' + event.colno : 'unknown location';
+          show('SpeakFlow AI failed to start.', event.message + '\n' + where);
+        });
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          var text = reason && reason.stack ? reason.stack : String(reason);
+          show('SpeakFlow AI hit an unhandled error while starting.', text);
+        });
+
+        // If React never fills #root, say so rather than leaving a blank page.
+        window.setTimeout(function () {
+          var root = document.getElementById('root');
+          var shell = document.getElementById('boot-shell');
+          // The static boot shell is expected to be gone once React mounts.
+          if (root && shell && !shown) {
+            show(
+              'SpeakFlow AI did not finish loading.',
+              'The interface bundle loaded but React never replaced the boot screen. Check the console for an error.',
+            );
+          }
+        }, 6000);
+      })();
+    </script>
+
+    <script type="module" src="/src/client/main.tsx"></script>
+  </body>
+</html>

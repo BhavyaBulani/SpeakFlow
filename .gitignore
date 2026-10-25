@@ -1,0 +1,43 @@
+node_modules/
+dist/
+build/
+coverage/
+
+# Local environment files - never commit real credentials
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local runtime data (vocabulary persistence, logs)
+.data/
+*.log
+npm-debug.log*
+logs/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+
+# Local tooling artefacts
+openai-openapi.yaml
+speakflow-extension.zip
+.e2e-*.png
+.*.log
+.e2e-extension-profile/
+
+# Local whisper.cpp installs: hundreds of MB of binaries and models.
+# Recreated from docs/LOCAL_STT.md - never committed.
+.local-models/
+
+# Throwaway GitHub API responses written while inspecting whisper.cpp releases
+.assets.txt
+.rel*.json
+
+# Local scratch output from verification runs
+.verify*.log
+bench-*.log
