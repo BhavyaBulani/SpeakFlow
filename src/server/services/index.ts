@@ -11,6 +11,7 @@ import {
   isWhisperCppAvailable,
 } from './whisperCpp';
 import { WhisperServerSttClient } from './whisperServer';
+import { createReplyLiveness, type ReplyLiveness } from './replyLiveness';
 import { VocabularyStore } from './vocabulary';
 
 /**
@@ -26,6 +27,8 @@ export interface Services {
   budget: AiRequestBudget;
   sessions: SessionStore;
   vocabulary: VocabularyStore;
+  /** Probes whether a local reply model is actually running. See replyLiveness.ts. */
+  replyLiveness: ReplyLiveness;
 }
 
 export interface ServiceOverrides {
@@ -33,6 +36,8 @@ export interface ServiceOverrides {
   sttClient?: SttClient;
   /** Injected so tests can assert the provider request without a network. */
   sttFetch?: typeof fetch;
+  /** Injected so /api/health liveness probes never reach the network in tests. */
+  livenessFetch?: typeof fetch;
   now?: () => number;
 }
 
@@ -102,6 +107,10 @@ export function createServices(config: ServerConfig, overrides: ServiceOverrides
     vocabulary: new VocabularyStore({
       persist: config.vocabPersistence,
       filePath: config.vocabFile,
+    }),
+    replyLiveness: createReplyLiveness(config, {
+      now,
+      ...(overrides.livenessFetch === undefined ? {} : { fetchImpl: overrides.livenessFetch }),
     }),
   };
 }

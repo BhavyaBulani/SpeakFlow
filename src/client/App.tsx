@@ -359,9 +359,12 @@ export default function App() {
 
   const clientId = useMemo(() => getClientId(), []);
   // Split deployment (SPA on Vercel, API on Render) needs an absolute API base;
-  // same-origin deployments fall back to '/api'.
-  const apiBaseUrl =
-    (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') ?? '/api';
+  // same-origin deployments fall back to '/api'. `?? '/api'` is not enough: an
+  // empty `VITE_API_BASE_URL=` (the value `.env` ships with) is defined, so it
+  // would become '' and every request would drop the `/api` prefix - `/config`
+  // instead of `/api/config`, i.e. a 404 from the SPA's own static handler.
+  const configuredApiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ?? '';
+  const apiBaseUrl = configuredApiBase.replace(/\/+$/, '') || '/api';
   const api = useMemo(
     () =>
       new ApiClient({
@@ -653,7 +656,7 @@ export default function App() {
           api={api}
           draft={phraseDraft}
           onDraftConsumed={() => setPhraseDraft(null)}
-          enabled={session.config?.features.vocabulary === true}
+          enabled={session.config === null ? null : session.config.features.vocabulary}
         />
       </main>
 

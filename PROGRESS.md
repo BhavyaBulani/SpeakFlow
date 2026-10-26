@@ -4,7 +4,7 @@
 what is blocked, and the single next action. Update it at the end of every
 working session so the next session starts here instead of re-reading the repo.
 
-- Last updated: **2026-10-26**
+- Last updated: **2026-10-26 (fifth session)**
 - Spec: `master_prompt.txt` + `prompt_2.txt` (prompt_2 wins on conflicts, and the
   addendum inside master_prompt wins over earlier sections).
 - Durable platform traps (Windows shell, browser verification, provider
@@ -18,7 +18,7 @@ All the plumbing exists and is green: two-stage reply engine (provisional →
 refined), local response-library fast path, stale-response protection, six
 tones, eight intents, chunked + realtime + fully-local speech-to-text, browser
 tab / system / microphone capture, the MV3 extension, privacy controls, and the
-zero-cost budget guards. **`npm run verify` is green (190 tests, 10 files).** The
+zero-cost budget guards. **`npm test` is green (211 tests, 11 files).** The
 one thing never proven is the only thing that cannot be proven here: a real
 human voice from a real call reaching the pipeline, which needs a credential,
 a real meeting tab, and a person. Nothing is marked **Verified** in
@@ -27,9 +27,16 @@ a real meeting tab, and a person. Nothing is marked **Verified** in
 ## 2. The single next action
 
 > Both local-path levers named last session are now **closed** — `whisper-server`
-> (transport) and `tiny.en` vs `base.en` (model choice). See §6. But a **new
-> blocker** was confirmed this session: the ₹0 end-to-end run is only
-> **half-runnable** because no local reply model is installed. See §2a.
+> (transport) and `tiny.en` vs `base.en` (model choice). See §6. The **blocker** is
+> unchanged and re-confirmed: the ₹0 end-to-end run is only **half-runnable**
+> because no local reply model is installed. See §2a.
+>
+> **Fourth session: `.env` now exists** (it did not before, so the app could only
+> ever run in mock mode). It is configured for the local stack — `whisper-cpp` on
+> `ggml-tiny.en.bin`, `AI_PROVIDER=local` on `qwen2.5:3b-instruct` — and
+> `npm run check:config` now prints which half is genuinely live. Nothing in
+> `src/` changed. Start the model and the refined half becomes real with no
+> further edits.
 
 ### 2a. The actual blocker on a ₹0 end-to-end run
 
@@ -53,6 +60,17 @@ reachable. Three ways to close it, cheapest first:
 
 **Do not** use `OPENAI_API_KEY` for this. It is paid, and only buys true WebRTC
 interim partials.
+
+**Re-confirmed 2026-10-26 (fourth session)** — still no `ollama`, nothing on
+`127.0.0.1:11434`, no `.gguf` in `.local-models/`. The app's own tool now states
+it: `npm run check:config` ends with
+
+```
+speech -> transcript   READY (fully local, no key, no quota)
+transcript -> refined  SAFE FALLBACK ONLY (nothing on the local endpoint; start the model server)
+```
+
+So the table above is machine-checkable rather than an assertion in a doc.
 
 ---
 
@@ -78,7 +96,7 @@ Only things actually run are listed. Numbers come from the last green run,
 |---|---|---|
 | Lint | `npm run lint` | 0 errors |
 | Typecheck | `npm run typecheck` | 0 errors |
-| Unit + API + UI | `npm test` | **204 tests / 10 files** (203 pass, 1 UI timeout under load — passes alone) |
+| Unit + API + UI | `npm test` | **211 tests / 11 files, all pass** |
 | Production build | `npm run build` | PASS |
 | No secret in bundle/extension | `npm run check:bundle` | PASS, 10 files scanned |
 | Extension manifest + syntax | `npm run check:extension` | PASS, 4 scripts parsed |
@@ -108,7 +126,7 @@ end-to-end `speech → suggestion` latency on a hosted key; any deployment.
 | Any platform marked Verified | Needs a real call + a person to speak. **A paid key is not required** | Run one real Meet call on the ₹0 stack: `STT_PROVIDER=whisper-cpp` + `AI_PROVIDER=local` |
 | End-to-end latency figures | Same | UI already shows `Speech → reply`, `Speech → text`, `Text → request`, `Request → reply` |
 | Refined replies at ₹0 | No local LLM installed (no Ollama, no `.gguf`) | `ollama pull qwen2.5:3b-instruct` then `AI_PROVIDER=local` — see §2a |
-| No version control | There is **no git repo** in this workspace | `git init` + first commit, before anything bigger changes |
+| `aiConfigured: true` can mean **"selected"**, not "running" | `deriveConfig()` is synchronous and must not block on a socket, so a `local` provider reports configured whenever it is chosen | **Fixed:** `/api/health` now carries a `replyModel` probe (`src/server/services/replyLiveness.ts`, 7 tests) and the UI shows a notice when a local model is selected but not answering; `npm run check:config` still prints it from the CLI |
 | WASAPI desktop companion | No `dotnet`/`csc` toolchain on this machine | Use the existing `system` capture mode (Chrome "Share system audio") instead, or install a toolchain |
 | Local route misses the ~1 s target | Remaining cost is CPU inference; the per-chunk startup half is gone, and `tiny.en` cuts it further | Nothing cheap left. The real fix for the ~1 s target is a streaming recogniser, not a smaller model |
 | No interim partials on the chunked/local routes | Those routes finalise per chunk by design | Only `openai-realtime` (WebRTC) yields true partials |
@@ -116,6 +134,77 @@ end-to-end `speech → suggestion` latency on a hosted key; any deployment.
 | Mobile SIM/WhatsApp/iOS capture | OS-blocked; no authorised API | Stays **Unsupported**; do not work around it |
 
 ## 6. Session log (newest first)
+
+### 2026-10-26 (fifth session)
+
+Closed the honesty gap the fourth session recorded but deliberately did not fix,
+and found a real client bug while verifying it.
+
+- **New `src/server/services/replyLiveness.ts`** — answers "is the reply model
+  *answering*?", which `aiConfigured` cannot. Probes the OpenAI-compatible
+  `/models` list (Ollama and LM Studio both expose it); **any** HTTP answer counts
+  as listening. 5 s TTL, concurrent polls coalesced, never throws, and
+  `applicable: false` for hosted providers so `/health` never polls a third party.
+- **Wired to `/api/health`, not `/api/config`** — config is synchronous and
+  cacheable, a socket probe is neither. `Services` gained `replyLiveness`, with a
+  `livenessFetch` override so `tests/api.test.ts` never touches the network.
+- **UI** now separates the two failures: "not configured" only when no provider
+  is selected, "the local model is not answering" otherwise.
+- **Found and fixed a real bug** (`src/client/App.tsx`): the base-URL fallback
+  used `?? '/api'`, but `.env` ships `VITE_API_BASE_URL=` **empty**, so the base
+  became `''` and every request dropped the `/api` prefix — answered 404 by the
+  SPA's static handler. The whole UI showed "Server unreachable" against a
+  healthy server. Invisible until a `.env` existed (created last session).
+- **`VocabularyPanel.enabled` is now `boolean | null`** — `null` = config not yet
+  loaded, instead of asserting the feature is off before knowing anything.
+- **Fixed the `tests/ui.test.tsx` mock** to key on `input.url` (it did
+  `String(input)` → `"[object Request]"`, so every route missed and fell through
+  to the 404) and added the missing `/api/vocabulary` route. The "Save phrase
+  stays disabled" failure was a real defect, not the documented load flake.
+- **Verified this session:** `tsc --noEmit` clean; `eslint` clean on every
+  touched file; `vitest run` **211/211 across 11 files**; `npm run build` OK;
+  `check:bundle` OK; `check:extension` OK; `npm run test:e2e` PASS. `npm run
+  verify` was deliberately **not** run as one command — memory ceiling.
+- **Next action, unchanged:** `ollama pull qwen2.5:3b-instruct` + `ollama serve`,
+  then `npm run check:config`; the last line should flip to READY and
+  `/api/health` should report `replyModel.reachable: true`.
+
+### 2026-10-26 (fourth session)
+
+Created the missing `.env`. The workspace had none, so the app could only ever run
+in mock mode — which made every ₹0 discussion academic.
+
+- **`.env` (gitignored) now configures the local stack**, not the defaults:
+  `STT_PROVIDER=whisper-cpp` with `WHISPER_CPP_BIN`/`WHISPER_CPP_MODEL` pointing at
+  binaries verified present on disk, `WHISPER_CPP_MODE=cli`, and `AI_PROVIDER=local`
+  on `qwen2.5:3b-instruct`. `MOCK_AI=0` deliberately. Model is `tiny.en` per last
+  session's measurement, with `base.en` noted in a comment as the noisy-audio
+  alternative.
+- **New `npm run check:config`** (`scripts/check-config.mjs`): prints the resolved
+  config through the *same* `deriveConfig()`/`toPublicAppConfig()` the server
+  uses, then probes the endpoints config cannot. The distinction it exists to
+  draw: a doc saying "local works" and a config saying `aiConfigured: true` are
+  statements about **intent**; this prints **state**.
+- **Real measured output this session:** `sttConfigured yes`, whisper binary and
+  `ggml-tiny.en.bin` **present**, `realtimeConfigured no`, reply endpoint
+  **ECONNREFUSED** → speech half READY, reply half safe-fallback-only. Exactly the
+  §2a table, now machine-checked.
+- **Resolved a stale gap:** §5 claimed "there is no git repo". There is one — 3
+  commits, clean tree, `da7bedd`. Row replaced.
+- **Recorded rather than papered over a real honesty gap:** `isAiConfigured()`
+  returns true whenever `AI_PROVIDER=local` is *selected*. This is the same class
+  of bug as the one fixed last session, in reverse — and flipping it back would
+  re-break the keyless case that `tests/localProvider.test.ts` deliberately
+  covers. The correct fix is a real liveness probe on `/api/health`, not a config
+  predicate. **Not changed this session.**
+- **Verified this session:** `npm run check:config` (output above);
+  `eslint scripts/check-config.mjs` clean; `vitest run` over
+  `api` + `localProvider` + `localStt` + `stt` = **83/83 passed**, confirming a
+  real `.env` does not leak into the suite (tests never read `process.env`).
+  **Not re-run:** full `npm test`, build, browser E2E — no `src/` code changed.
+- **Next action, now one step shorter:** `ollama pull qwen2.5:3b-instruct &&
+  ollama serve`, then re-run `npm run check:config`; the last line should flip to
+  READY. No `.env` edit needed.
 
 ### 2026-10-26 (third session)
 

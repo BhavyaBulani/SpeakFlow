@@ -38,9 +38,25 @@ beforeEach(() => {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
+      // `input` is a Request object, not a string: `String(input)` gives
+      // "[object Request]", so every route missed below and fell through to the
+      // 404. That made config fail to load, which left the workspace reporting
+      // "Server unreachable" and the saved-phrase button permanently disabled -
+      // two test failures that had nothing to do with the assertions' subject.
+      const url =
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.includes('/api/config')) {
         return new Response(JSON.stringify(mockConfig()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      // The workspace lists saved phrases on mount. Leaving this to fall through
+      // to the 404 below made the panel report the feature as unavailable, and
+      // the resulting notice mentioned "saved phrases" - so the test failed for a
+      // reason that had nothing to do with the UI being broken.
+      if (url.includes('/api/vocabulary')) {
+        return new Response(JSON.stringify({ items: [] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -144,7 +160,9 @@ describe('workspace UI', () => {
     render(<App />);
     // The API and config flag both claim vocabulary support; a user must be able
     // to reach it, otherwise the feature is advertised but unreachable.
-    expect(await screen.findByText(/saved phrases/i)).toBeTruthy();
+    // Anchored to the panel title: the empty-state copy and the list load both
+    // mention "saved phrases", so an unanchored match is ambiguous.
+    expect(await screen.findByText(/^\s*✎?\s*Saved phrases\s*$/)).toBeTruthy();
     expect(screen.getByLabelText(/english sentence/i)).toBeTruthy();
     expect(screen.getByLabelText(/what it means/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /save phrase/i })).toBeTruthy();
@@ -152,20 +170,25 @@ describe('workspace UI', () => {
 
   it('disables Save phrase until both required fields are filled', async () => {
     render(<App />);
-    const savePhrase = (await screen.findByRole('button', {
-      name: /^save phrase$/i,
-    })) as HTMLButtonElement;
-    expect(savePhrase.disabled).toBe(true);
+    // The button is also disabled while `features.vocabulary` is still unknown, so
+    // wait for config to resolve before asserting, or this tests the fetch still
+    // being in flight. The empty-state line only renders once config AND the list
+    // request have both landed - waiting on the *absence* of an error notice did
+    // not work, because it is absent before config loads too.
+    await screen.findByText(/nothing saved yet/i);
+    const current = () =>
+      screen.getByRole('button', { name: /^save phrase$/i }) as HTMLButtonElement;
+    expect(current().disabled).toBe(true);
 
     // A term alone is not enough: the meaning is what makes the phrase learnable.
     fireEvent.change(screen.getByLabelText(/english sentence/i), {
       target: { value: "I'll investigate and update you." },
     });
-    expect(savePhrase.disabled).toBe(true);
+    expect(current().disabled).toBe(true);
 
     fireEvent.change(screen.getByLabelText(/what it means/i), {
       target: { value: 'Buying time without promising a fix.' },
     });
-    expect(savePhrase.disabled).toBe(false);
+    expect(current().disabled).toBe(false);
   });
 });

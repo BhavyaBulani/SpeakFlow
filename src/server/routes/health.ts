@@ -3,7 +3,14 @@ import { toPublicAppConfig } from '../config';
 import { asyncHandler } from '../lib/http';
 import { providerStatus, type Services } from '../services';
 
-/** Service health. Public (no auth) so uptime checks and the UI can poll it. */
+/**
+ * Service health. Public (no auth) so uptime checks and the UI can poll it.
+ *
+ * `replyModel` is probed here rather than in `/api/config` on purpose: config is
+ * synchronous and cacheable, while this answers "is the model actually
+ * answering right now?" which requires a socket and must not be trusted for
+ * longer than its cache.
+ */
 export function healthRouter(services: Services): Router {
   const router = Router();
   const startedAt = Date.now();
@@ -18,6 +25,7 @@ export function healthRouter(services: Services): Router {
         uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
         activeSessions: services.sessions.size,
         ...providerStatus(services),
+        replyModel: await services.replyLiveness.check(),
         timestamp: new Date().toISOString(),
       });
     }),

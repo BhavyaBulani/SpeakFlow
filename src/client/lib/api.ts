@@ -139,7 +139,18 @@ export class ApiClient {
     return this.request<AppConfig>('/config', { method: 'GET', headers: {} });
   }
 
-  async health(): Promise<{ status: string; aiConfigured: boolean; mockAi: boolean }> {
+  async health(): Promise<{
+    status: string;
+    aiConfigured: boolean;
+    mockAi: boolean;
+    replyModel?: {
+      provider: string;
+      model: string;
+      applicable: boolean;
+      reachable: boolean | null;
+      detail: string;
+    };
+  }> {
     return this.request('/health', { method: 'GET', headers: {} });
   }
 

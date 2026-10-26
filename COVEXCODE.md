@@ -75,6 +75,50 @@ provider refuses to mint realtime tokens on purpose. Never make the demo provide
 look like live transcription — `docs/PLATFORM_FEASIBILITY.md` and the README both
 state which paths need a real key.
 
+## `aiConfigured` answers "selected", not "running"
+
+`deriveConfig()` is synchronous, so it cannot probe a socket. A `local` reply
+provider (and `MOCK_AI`) therefore reports `aiConfigured: true` the moment it is
+*chosen*: the browser is told AI is ready while nothing is listening on
+`127.0.0.1:11434`. Do not "fix" this by requiring a key — that is the keyless-local
+bug already fixed in `docs/LOCAL_MODEL.md`, and `tests/localProvider.test.ts`
+covers it deliberately.
+
+Use `npm run check:config` instead. It resolves config through the same
+`deriveConfig()`/`toPublicAppConfig()` the server uses and then probes the real
+endpoints, so it prints actual state rather than intent. Run it after touching
+`.env`: the app runs *fine* with a dead refined-reply path (labelled
+`safe_fallback`), which is easy to misread as "the model is bad".
+
+## An empty `VITE_API_BASE_URL=` silently drops the `/api` prefix
+
+`src/client/App.tsx` used `import.meta.env.VITE_API_BASE_URL ?? '/api'`. `.env`
+ships the variable **empty**, not undefined, so `??` never fired and the base
+became `''` — every request went to `/config` instead of `/api/config` and got
+the SPA's static-handler 404. The UI then reported "Server unreachable" with the
+body of a 404 as the reason, which points at the server rather than the URL.
+Fixed with `?.trim()` + `|| '/api'`; keep the falsy check, not `??`.
+
+Same file, related trap: `VocabularyPanel`'s `enabled` prop is `boolean | null`,
+where `null` means "config has not loaded yet". Passing `false` while config was
+in flight made the panel announce "Saved phrases are not available on this
+server" — a false statement about the server, asserted before the browser knew
+anything.
+
+`.env` also leaks into `import.meta.env` during vitest, unlike `process.env`:
+tests never read `process.env`, but Vite inlines `VITE_*` at transform time. That
+is how the empty value broke `tests/ui.test.tsx` while the API suite stayed
+green. If a client test fails only on a machine with a `.env`, suspect a `VITE_*`
+inline before suspecting the test.
+
+## The reply-liveness probe
+
+`src/server/services/replyLiveness.ts` answers "is the reply model *answering*?",
+which `aiConfigured` cannot. It is surfaced on `/api/health` as `replyModel` and
+not on `/api/config`: config is synchronous and cacheable, a socket probe is
+neither. Any HTTP answer counts as listening (a 401 still proves something is
+bound to the port); 5 s TTL, concurrent polls coalesced, never throws.
+
 ## Dev machine memory ceiling (not a project bug)
 16 GB RAM with ~21 GB of commit demand is what kills things here. CovexCode's
 "session actor gone" / IDE freezing under load is Windows terminating the session

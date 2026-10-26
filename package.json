@@ -24,6 +24,7 @@
     "bench:stt": "tsx scripts/bench-stt-transport.mjs",
     "bench:models": "tsx scripts/bench-models.mjs",
     "test:e2e": "npm run build && node scripts/e2e-browser.mjs",
+    "check:config": "tsx scripts/check-config.mjs",
     "check:bundle": "node scripts/check-bundle-secrets.mjs",
     "check:extension": "node scripts/check-extension.mjs",
     "package:extension": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-extension.ps1",

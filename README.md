@@ -54,7 +54,7 @@ READY TO SAY:      "I'll investigate what's causing the loading delay and update
 | Optional saved phrases (vocabulary) | Implemented — API, store **and UI panel** |
 | **Permission onboarding (explain before prompt, real states)** | Implemented — `src/client/lib/permissions.ts` |
 | No secret in browser bundle | Implemented + `npm run check:bundle` |
-| Automated tests | **204 tests across 10 files** — `npm test` |
+| Automated tests | **211 tests across 11 files** — `npm test` |
 | Multi-user accounts / Supabase RLS | **Not implemented** — see Limitations |
 
 Nothing in the UI is a mock button. When the provider is unconfigured the API says so and the UI
@@ -91,13 +91,14 @@ needed to run the app; it only adds true WebRTC interim partials (see §5).
 | `npm run build` | Bundles server → `dist/server`, SPA → `dist/client` |
 | `npm start` | Runs the built server (also serves the SPA) |
 | `npm run typecheck` | `tsc --noEmit` over client, server, shared, tests |
-| `npm test` | Vitest (pipeline + API + UI, 204 tests) |
+| `npm test` | Vitest (pipeline + API + UI, 211 tests) |
 | `npm run test:e2e` | Builds, then drives the real app in Chromium (21 checks) |
 | `npm run bench` | Reply-engine microbenchmark; exits non-zero on regression |
 | `npm run bench:local` | Full local ₹0 pipeline on real speech audio (needs `docs/LOCAL_STT.md` setup) |
 | `npm run bench:stt` | Local STT transports compared on real audio (`cli` vs resident `server`) |
 | `npm run bench:models` | Local models compared on real audio: speed **and** word error rate |
 | `npm run check:bundle` | Fails if a provider secret reached the client bundle |
+| `npm run check:config` | Resolves config the way the server does, then probes the real STT/reply endpoints and prints actual state, not intent |
 | `npm run check:extension` | Validates the MV3 manifest and parses every extension script |
 | `npm run verify` | lint → typecheck → test → build → bundle scan → extension check |
 | `npm run verify:full` | `verify` plus the real-browser E2E run |
@@ -519,7 +520,8 @@ listed practical tests on real devices before building mobile features.
 |---|---|---|
 | Lint | `npm run lint` | **PASS** — 0 errors |
 | Typecheck | `npm run typecheck` | **PASS** — 0 errors |
-| Unit + API + UI tests | `npm test` | **PASS** — 203/204 pass; the one failure is the known `ui.test.tsx` load flake, verified passing alone |
+| Unit + API + UI tests | `npm test` | **PASS** — 211/211 pass (11 files) |
+| Reply-model liveness probe | `GET /api/health` | **PASS** — `replyModel` reported by the socket probe, separate from `aiConfigured` |
 | Production build | `npm run build` | **PASS** |
 | No secret in client/extension | `npm run check:bundle` | **PASS** — 10 files scanned |
 | Extension manifest + syntax | `npm run check:extension` | **PASS** — manifest valid, 4 scripts parsed |

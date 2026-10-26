@@ -24,8 +24,13 @@ export function VocabularyPanel({
   /** Text handed over from the script panel ("save this sentence"). */
   draft: string | null;
   onDraftConsumed: () => void;
-  /** Server capability flag; when false the panel says so instead of failing. */
-  enabled: boolean;
+  /**
+   * Server capability flag; when false the panel says so instead of failing.
+   * `null` means the config has not loaded yet, which is NOT the same fact as
+   * false: announcing "not available on this server" during the first render
+   * would claim something the browser does not know yet.
+   */
+  enabled: boolean | null;
 }) {
   const [items, setItems] = useState<VocabularyItem[]>([]);
   const [term, setTerm] = useState('');
@@ -104,7 +109,7 @@ export function VocabularyPanel({
       </div>
 
       <div className="p-4 flex flex-col gap-3">
-        {!enabled ? (
+        {enabled === false ? (
           <p className="notice notice-info" role="status">
             Saved phrases are not available on this server. The feature is enabled by default; if you
             see this, the server rejected the request or the feature flag is off.
@@ -157,7 +162,9 @@ export function VocabularyPanel({
             type="button"
             className="btn btn-ghost btn-sm self-start"
             onClick={() => void add()}
-            disabled={!enabled || busy || term.trim().length === 0 || meaningEn.trim().length === 0}
+            disabled={
+              enabled !== true || busy || term.trim().length === 0 || meaningEn.trim().length === 0
+            }
           >
             {busy ? 'Saving…' : 'Save phrase'}
           </button>

@@ -239,7 +239,24 @@ export function useCopilotSession(options: {
           setConfigNotice(
             'The AI provider is not configured on this server, so reply generation and translation are unavailable. Add OPENAI_API_KEY to the server .env (see README), or start the server with MOCK_AI=1 for clearly-labelled mock replies.',
           );
+          return;
         }
+        // `aiConfigured` only means a provider is SELECTED. For a local model it
+        // stays true while nothing is listening on loopback, so the honest
+        // question - is it answering? - needs the probe in /api/health.
+        void api
+          .health()
+          .then((health) => {
+            if (cancelled) return;
+            const model = health.replyModel;
+            if (model?.applicable === true && model.reachable === false) {
+              setConfigNotice(
+                `The local reply model (${model.model}) is not answering, so refined replies will show as Fallback. ${model.detail}`,
+              );
+            }
+          })
+          // A failed health check must not be reported as a config error.
+          .catch(() => undefined);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
