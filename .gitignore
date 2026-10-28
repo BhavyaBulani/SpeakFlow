@@ -34,6 +34,11 @@ speakflow-extension.zip
 master_prompt.txt
 prompt_*.txt
 
+# Session handoff notes - local working state, not part of the product.
+# COVEXCODE.md is deliberately NOT here: shipped docs link to it.
+PROGRESS.md
+NEXT_STEPS.md
+
 # Local whisper.cpp installs: hundreds of MB of binaries and models.
 # Recreated from docs/LOCAL_STT.md - never committed.
 .local-models/
