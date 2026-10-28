@@ -195,7 +195,7 @@ being billed.
 | `AI_PROVIDER` | `openai` | `openai` \| `groq` \| `openai-compatible` \| `local` (Ollama/LM Studio, no key) |
 | `AI_API_KEY` | — | Key for the chosen reply provider; ignored for `local` |
 | `AI_MODEL` / `AI_BASE_URL` | — | Model id and endpoint override |
-| `AI_DAILY_REQUEST_BUDGET` | `200` | Hard per-day cap on AI requests; `0` disables |
+| `AI_DAILY_REQUEST_BUDGET` | `200` | Hard per-day cap on AI requests, **enforced** before every provider call (replies and translation share it); `0` disables. Shared across instances when `DATABASE_URL` is set, per process otherwise — `docs/DEPLOYMENT.md` |
 | `AI_FAST_PATH` | `1` | Answer provisional replies from the local library (microseconds, free) |
 | `PROVISIONAL_MAX_WAIT_MS` | `1800` | Force a provisional reply even if the speaker never pauses |
 | `STT_PROVIDER` | `openai-realtime` | `openai-realtime` \| `openai-compatible` \| **`whisper-cpp`** (fully local) |
@@ -426,7 +426,8 @@ for a single user; both matter if several people use one deployment, because
   browser-generated client id, which is isolation between browsers, not between users. Real
   accounts need Supabase Auth + RLS behind the same service interfaces.
 - **Rate limiting is in-memory**, so it resets on redeploy and is per-instance. Swap for Redis
-  when scaling horizontally.
+  when scaling horizontally. The daily AI cap is deliberately *not* in that category: it lives in
+  Postgres when `DATABASE_URL` is set, because a per-instance cap is not a day on a serverless host.
 - **`confidence` is the model's own estimate**, not a correctness guarantee. Treat
   `facts_to_verify` as the real signal.
 - **The fully local route is chunked, not streaming, and misses the ~1 s target.**

@@ -25,7 +25,7 @@ export function healthRouter(services: Services): Router {
         uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
         activeSessions: await services.sessions.count().catch(() => null),
         sessionStore: services.sessions.kind,
-        ...providerStatus(services),
+        ...(await providerStatus(services)),
         replyModel: await services.replyLiveness.check(),
         timestamp: new Date().toISOString(),
       });

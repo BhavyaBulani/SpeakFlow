@@ -154,6 +154,34 @@ export async function generateReply(
     }
   }
 
+  /*
+   * The daily cap, enforced *before* the provider call and after the free fast
+   * path, so a template answer never spends allowance.
+   *
+   * Reserved rather than counted afterwards: a request that is later cancelled
+   * or fails still counts. That over-counts by design - it is the only ordering
+   * that cannot overspend a free tier.
+   *
+   * A denied request returns a labelled `safe_fallback` instead of an error,
+   * for the same reason every other provider failure does: on a live call a
+   * holding line beats an error box. The notice says the cap was hit, so it is
+   * never mistaken for AI output.
+   */
+  const budget = await services.budget.tryConsume();
+  if (!budget.allowed) {
+    logger.warn('reply.budget_exhausted', {
+      stage: input.stage,
+      limit: budget.state.limit,
+      used: budget.state.used,
+      store: budget.state.store,
+    });
+    return buildFallback(
+      input,
+      startedAt,
+      'The daily AI request budget is used up, so no AI call was made. This is a safe holding line, not AI output. Rules and saved phrases still work, and the counter resets at server midnight.',
+    );
+  }
+
   let raw: string;
   let model: string;
   let providerLatency: number;

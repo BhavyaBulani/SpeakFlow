@@ -320,7 +320,7 @@ describe('local STT configuration', () => {
     expect(services.stt.model).toBe('package.json');
   });
 
-  it('reports a working local setup as configured in /api/health (no key needed)', () => {
+  it('reports a working local setup as configured in /api/health (no key needed)', async () => {
     // Regression: `configured` used to mean "holds a secret", so a fully
     // working local recogniser advertised itself as broken.
     const config = derive({
@@ -331,7 +331,7 @@ describe('local STT configuration', () => {
     });
     expect(config.sttApiKey).toBeNull();
     const services = createServices(config);
-    expect(providerStatus(services).stt.configured).toBe(true);
+    expect((await providerStatus(services)).stt.configured).toBe(true);
   });
 
   it('advertises the local provider in /api/config without leaking anything', async () => {

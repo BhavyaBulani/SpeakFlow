@@ -1,7 +1,8 @@
 import type { ServerConfig } from '../config';
 import { isAiConfigured, isSttConfigured } from '../config';
 import { CircuitBreaker } from './breaker';
-import { AiRequestBudget, type BudgetState } from './budget';
+import { MemoryAiRequestBudget, type AiBudget, type BudgetState } from './budget';
+import { PostgresAiBudget } from './budgetStorePostgres';
 import { MockAiClient, OpenAiClient, UnconfiguredAiClient, type AiClient } from './openai';
 import { MemorySessionStore, type SessionStore } from './sessions';
 import { PostgresSessionStore, createPgPool, type Queryable } from './sessionStorePostgres';
@@ -25,7 +26,7 @@ export interface Services {
   ai: AiClient;
   stt: SttClient;
   breaker: CircuitBreaker;
-  budget: AiRequestBudget;
+  budget: AiBudget;
   sessions: SessionStore;
   vocabulary: VocabularyStore;
   /** Probes whether a local reply model is actually running. See replyLiveness.ts. */
@@ -42,6 +43,8 @@ export interface ServiceOverrides {
   now?: () => number;
   /** Injected so the Postgres path is testable without a database. */
   sessionStore?: SessionStore;
+  /** Injected so a test can drive the daily cap without spending real requests. */
+  budget?: AiBudget;
   dbQueryable?: Queryable;
 }
 
@@ -84,6 +87,25 @@ function buildSttClient(config: ServerConfig, overrides: ServiceOverrides): SttC
 }
 
 /**
+ * One database pool for every store that needs one.
+ *
+ * A serverless host caps connections per instance, so a second pool would halve
+ * that limit for no benefit. `null` means "no database configured".
+ */
+function buildDatabase(config: ServerConfig, overrides: ServiceOverrides): Queryable | null {
+  // DATABASE_URL is the switch, not the presence of a queryable: an injected
+  // queryable only *supplies* the connection, it must not by itself turn a
+  // memory-mode deployment into a Postgres one.
+  if (config.databaseUrl === null) return null;
+  if (overrides.dbQueryable !== undefined) return overrides.dbQueryable;
+  return createPgPool({
+    connectionString: config.databaseUrl,
+    max: config.databasePoolMax,
+    ssl: config.databaseSsl,
+  });
+}
+
+/**
  * Chooses the session store.
  *
  * With no DATABASE_URL the process keeps sessions in memory, which is correct
@@ -91,33 +113,53 @@ function buildSttClient(config: ServerConfig, overrides: ServiceOverrides): SttC
  * which is the only way a multi-instance or serverless deployment can work: a
  * session created by one instance must be visible to the next.
  */
-function buildSessionStore(config: ServerConfig, overrides: ServiceOverrides): SessionStore {
+function buildSessionStore(
+  config: ServerConfig,
+  overrides: ServiceOverrides,
+  database: Queryable | null,
+): SessionStore {
   if (overrides.sessionStore !== undefined) return overrides.sessionStore;
 
   const now = overrides.now;
   const ttlMinutes = config.sessionTtlMinutes;
 
-  if (config.databaseUrl === null) {
+  if (database === null) {
     return new MemorySessionStore({ ttlMinutes, ...(now === undefined ? {} : { now }) });
   }
 
-  const queryable =
-    overrides.dbQueryable ??
-    createPgPool({
-      connectionString: config.databaseUrl,
-      max: config.databasePoolMax,
-      ssl: config.databaseSsl,
-    });
-
   return new PostgresSessionStore({
     ttlMinutes,
-    queryable,
+    queryable: database,
     ...(now === undefined ? {} : { now }),
   });
 }
 
+/**
+ * Chooses the budget store by the same rule as the session store.
+ *
+ * Without a database the daily counter is per process, which is honest for
+ * `npm run dev` and the test suite. With one, every instance shares a single
+ * UTC-day counter - without it the cap is per *instance*, so two warm instances
+ * allow twice the configured number and every cold start resets it.
+ */
+function buildBudget(
+  config: ServerConfig,
+  overrides: ServiceOverrides,
+  database: Queryable | null,
+): AiBudget {
+  if (overrides.budget !== undefined) return overrides.budget;
+
+  const now = overrides.now;
+  const limit = config.aiDailyRequestBudget;
+  const clock = now === undefined ? {} : { now };
+
+  if (database === null) return new MemoryAiRequestBudget({ limit, ...clock });
+  return new PostgresAiBudget({ limit, queryable: database, ...clock });
+}
+
 export function createServices(config: ServerConfig, overrides: ServiceOverrides = {}): Services {
   const now = overrides.now ?? (() => Date.now());
+  const database = buildDatabase(config, overrides);
 
   const ai: AiClient =
     overrides.aiClient ??
@@ -139,8 +181,8 @@ export function createServices(config: ServerConfig, overrides: ServiceOverrides
     ai,
     stt: buildSttClient(config, overrides),
     breaker: new CircuitBreaker({ threshold: 3, cooldownMs: 20_000, now }),
-    budget: new AiRequestBudget({ limit: config.aiDailyRequestBudget, now }),
-    sessions: buildSessionStore(config, overrides),
+    budget: buildBudget(config, overrides, database),
+    sessions: buildSessionStore(config, overrides, database),
     vocabulary: new VocabularyStore({
       persist: config.vocabPersistence,
       filePath: config.vocabFile,
@@ -153,14 +195,14 @@ export function createServices(config: ServerConfig, overrides: ServiceOverrides
 }
 
 /** Reported by /api/health and /api/config. */
-export function providerStatus(services: Services): {
+export async function providerStatus(services: Services): Promise<{
   aiConfigured: boolean;
   mockAi: boolean;
   provider: string;
   stt: { provider: string; mode: string; configured: boolean; model: string };
   breaker: { open: boolean; consecutiveFailures: number };
   budget: BudgetState;
-} {
+}> {
   const breaker = services.breaker.state();
   return {
     aiConfigured: isAiConfigured(services.config),
@@ -176,6 +218,8 @@ export function providerStatus(services: Services): {
       model: services.stt.model,
     },
     breaker: { open: breaker.open, consecutiveFailures: breaker.consecutiveFailures },
-    budget: services.budget.state(),
+    // Awaited: with a shared store the count lives in the database, so there is
+    // no synchronous answer to give.
+    budget: await services.budget.state(),
   };
 }

@@ -35,6 +35,19 @@ export async function translateToEnglish(
     });
   }
 
+  // Same daily cap as replies: translation is a provider call and spends the
+  // same allowance. Unlike a reply there is no holding line to fall back to, so
+  // this reports the cap instead of inventing one.
+  const budget = await services.budget.tryConsume();
+  if (!budget.allowed) {
+    logger.warn('translate.budget_exhausted', {
+      limit: budget.state.limit,
+      used: budget.state.used,
+      store: budget.state.store,
+    });
+    throw new ApiError('AI_BUDGET_EXHAUSTED');
+  }
+
   try {
     const result = await services.ai.structuredCompletion({
       model: services.config.aiModel,
