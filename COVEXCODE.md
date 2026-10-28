@@ -47,6 +47,13 @@ through `cmd /C`. Symptom: `FINDSTR: Cannot open Files"` or PowerShell parse
 errors. Put anything non-trivial in a `.ps1`/`.mjs` script file instead of
 composing it inline.
 
+Same trap with git: `git commit -m "..."` where the message spans paragraphs and
+mentions a path like `/api/health` gets split into pathspecs by `cmd /C` and dies
+with `fatal: Invalid path '/api': No such file or directory`. The `git add` before
+it succeeds, so the files sit **staged** while the commit silently never happens.
+Write the message to a file and use `git commit -F` (`*.log` is gitignored, so
+`.commit-msg.log` is a safe name), then delete it.
+
 ## Test selectors vs. UI copy
 
 `getByText(/preliminary/i)` matched the *explainer* text in the guidance list, so
