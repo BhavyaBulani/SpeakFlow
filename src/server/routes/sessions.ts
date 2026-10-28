@@ -3,6 +3,7 @@ import { replyRequestSchema, sessionCreateSchema } from '../../shared/schemas';
 import { ApiError, asyncHandler, routeParam } from '../lib/http';
 import { logger } from '../lib/logger';
 import type { Services } from '../services';
+import { toSessionInfo } from '../services/sessions';
 import { generateReply } from '../services/replyEngine';
 
 /**
@@ -26,9 +27,9 @@ export function sessionsRouter(services: Services): Router {
             'Transcript saving is not available: SpeakFlow keeps transcripts in memory only. See Privacy in the README.',
         });
       }
-      const record = services.sessions.create(parsed.label);
+      const record = await services.sessions.create(parsed.label);
       logger.info('session.created', { sessionId: record.id });
-      res.status(201).json(services.sessions.toInfo(record));
+      res.status(201).json(toSessionInfo(record));
     }),
   );
 
@@ -36,7 +37,7 @@ export function sessionsRouter(services: Services): Router {
     '/:id',
     asyncHandler(async (req, res) => {
       const id = routeParam(req, 'id');
-      const removed = services.sessions.delete(id);
+      const removed = await services.sessions.delete(id);
       if (!removed) throw new ApiError('SESSION_NOT_FOUND');
       logger.info('session.deleted', { sessionId: id });
       res.status(204).end();
@@ -48,7 +49,7 @@ export function sessionsRouter(services: Services): Router {
     asyncHandler(async (req, res) => {
       const startedAt = Date.now();
       const input = replyRequestSchema.parse(req.body ?? {});
-      const session = services.sessions.refresh(routeParam(req, 'id'));
+      const session = await services.sessions.refresh(routeParam(req, 'id'));
       if (session === null) throw new ApiError('SESSION_NOT_FOUND');
 
       // Abort upstream work when the browser goes away (superseded request).

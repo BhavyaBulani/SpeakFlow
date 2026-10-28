@@ -144,6 +144,21 @@ export interface ServerConfig {
   sessionTtlMinutes: number;
   aiRequestTimeoutMs: number;
 
+  /**
+   * Postgres connection string. When set, call-session metadata is stored in the
+   * database instead of this process's memory.
+   *
+   * This is not a performance choice. On a serverless host every request may land
+   * on a different instance, so an in-memory session created by `POST /api/sessions`
+   * is invisible to the `POST /api/stt/chunk` that follows it. Without a shared
+   * store those routes answer SESSION_NOT_FOUND and the app cannot work at all.
+   */
+  databaseUrl: string | null;
+  /** Pool size. Keep small: serverless platforms cap connections per instance. */
+  databasePoolMax: number;
+  /** True when the connection string asks for TLS (`sslmode=require` etc). */
+  databaseSsl: boolean;
+
   accessToken: string | null;
   rateLimitWindowMs: number;
   rateLimitMax: number;
@@ -206,6 +221,7 @@ export function deriveConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig
   const openaiKey = readString(env, 'OPENAI_API_KEY');
   const explicitAiKey = readString(env, 'AI_API_KEY');
   const accessToken = readString(env, 'APP_ACCESS_TOKEN');
+  const databaseUrl = readString(env, 'DATABASE_URL');
 
   const providerRaw = readString(env, 'AI_PROVIDER', 'openai').toLowerCase();
   const aiProvider: AiProviderId =
@@ -293,6 +309,23 @@ export function deriveConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig
     contextWindowTurns: readInt(env, 'CONTEXT_WINDOW_TURNS', 6, 1, 12),
     sessionTtlMinutes: readInt(env, 'SESSION_TTL_MINUTES', 120, 5, 1440),
     aiRequestTimeoutMs: readInt(env, 'AI_REQUEST_TIMEOUT_MS', 20000, 2000, 60000),
+
+    databaseUrl: databaseUrl === '' ? null : databaseUrl,
+    databasePoolMax: readInt(env, 'DATABASE_POOL_MAX', 3, 1, 50),
+    // A hosted database (Neon, Supabase, Render) refuses plaintext connections.
+    // Honour an explicit sslmode, and default to TLS whenever a remote host is
+    // named, so a forgotten flag cannot silently ship transcripts' metadata
+    // unencrypted. Loopback is exempt.
+    databaseSsl:
+      databaseUrl === ''
+        ? false
+        : /sslmode=(require|verify-ca|verify-full)/i.test(databaseUrl)
+          ? true
+          : readBool(
+              env,
+              'DATABASE_SSL',
+              !/^postgres(ql)?:\/\/[^@]*@?(localhost|127\.0\.0\.1)/i.test(databaseUrl),
+            ),
 
     accessToken: accessToken === '' ? null : accessToken,
     rateLimitWindowMs: readInt(env, 'RATE_LIMIT_WINDOW_MS', 60000, 1000, 600000),

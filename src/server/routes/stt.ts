@@ -44,7 +44,7 @@ export function sttRouter(services: Services): Router {
 
       // A chunk may only be transcribed for a session this server actually
       // created, which keeps the route from being used as a free STT proxy.
-      const session = services.sessions.get(parsed.sessionId);
+      const session = await services.sessions.get(parsed.sessionId);
       if (session === null) {
         throw new ApiError('SESSION_NOT_FOUND');
       }
@@ -70,7 +70,7 @@ export function sttRouter(services: Services): Router {
       }
 
       chunksBySession.set(parsed.sessionId, used + 1);
-      services.sessions.touch(parsed.sessionId);
+      await services.sessions.touch(parsed.sessionId);
 
       const controller = new AbortController();
       res.on('close', () => {

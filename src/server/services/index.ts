@@ -3,7 +3,8 @@ import { isAiConfigured, isSttConfigured } from '../config';
 import { CircuitBreaker } from './breaker';
 import { AiRequestBudget, type BudgetState } from './budget';
 import { MockAiClient, OpenAiClient, UnconfiguredAiClient, type AiClient } from './openai';
-import { SessionStore } from './sessions';
+import { MemorySessionStore, type SessionStore } from './sessions';
+import { PostgresSessionStore, createPgPool, type Queryable } from './sessionStorePostgres';
 import { createSttClient, type SttClient } from './stt';
 import {
   WhisperCppSttClient,
@@ -39,6 +40,9 @@ export interface ServiceOverrides {
   /** Injected so /api/health liveness probes never reach the network in tests. */
   livenessFetch?: typeof fetch;
   now?: () => number;
+  /** Injected so the Postgres path is testable without a database. */
+  sessionStore?: SessionStore;
+  dbQueryable?: Queryable;
 }
 
 function buildSttClient(config: ServerConfig, overrides: ServiceOverrides): SttClient {
@@ -79,6 +83,39 @@ function buildSttClient(config: ServerConfig, overrides: ServiceOverrides): SttC
   return createSttClient(config, overrides.sttFetch === undefined ? {} : { fetchImpl: overrides.sttFetch });
 }
 
+/**
+ * Chooses the session store.
+ *
+ * With no DATABASE_URL the process keeps sessions in memory, which is correct
+ * for `npm run dev` and the test suite. With one, sessions live in Postgres,
+ * which is the only way a multi-instance or serverless deployment can work: a
+ * session created by one instance must be visible to the next.
+ */
+function buildSessionStore(config: ServerConfig, overrides: ServiceOverrides): SessionStore {
+  if (overrides.sessionStore !== undefined) return overrides.sessionStore;
+
+  const now = overrides.now;
+  const ttlMinutes = config.sessionTtlMinutes;
+
+  if (config.databaseUrl === null) {
+    return new MemorySessionStore({ ttlMinutes, ...(now === undefined ? {} : { now }) });
+  }
+
+  const queryable =
+    overrides.dbQueryable ??
+    createPgPool({
+      connectionString: config.databaseUrl,
+      max: config.databasePoolMax,
+      ssl: config.databaseSsl,
+    });
+
+  return new PostgresSessionStore({
+    ttlMinutes,
+    queryable,
+    ...(now === undefined ? {} : { now }),
+  });
+}
+
 export function createServices(config: ServerConfig, overrides: ServiceOverrides = {}): Services {
   const now = overrides.now ?? (() => Date.now());
 
@@ -103,7 +140,7 @@ export function createServices(config: ServerConfig, overrides: ServiceOverrides
     stt: buildSttClient(config, overrides),
     breaker: new CircuitBreaker({ threshold: 3, cooldownMs: 20_000, now }),
     budget: new AiRequestBudget({ limit: config.aiDailyRequestBudget, now }),
-    sessions: new SessionStore({ ttlMinutes: config.sessionTtlMinutes, now }),
+    sessions: buildSessionStore(config, overrides),
     vocabulary: new VocabularyStore({
       persist: config.vocabPersistence,
       filePath: config.vocabFile,

@@ -52,8 +52,18 @@ function main(): void {
 
   // Housekeeping: drop expired session metadata every minute.
   const sweeper = setInterval(() => {
-    const removed = services.sessions.sweep();
-    if (removed > 0) logger.debug('session.swept', { removed, remaining: services.sessions.size });
+    services.sessions
+      .sweep()
+      .then((removed) => {
+        if (removed > 0) {
+          logger.debug('session.swept', { removed });
+        }
+      })
+      .catch((error: unknown) => {
+        logger.warn('session.sweep_failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
   }, 60_000);
   sweeper.unref();
 
