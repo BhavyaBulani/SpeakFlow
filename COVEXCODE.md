@@ -202,3 +202,31 @@ After the first push, verify the remote really has the tree with
 `git ls-tree -r origin/main --name-only`. Do **not** use
 `gh api repos/OWNER/REPO/contents` — it 404s here even once the branch exists, so
 a 404 from it proves nothing about whether the push worked.
+
+## `deploy_project` can refuse every call in a session
+
+It errors with "a deployment could not be started this turn. It has to be the
+only tool call in the turn" even when it genuinely is the only call, with no
+prose around it. Retrying does not clear it (seen 5x in one session).
+
+Fallback: `npx vercel login` (interactive — the user must run it; a tool command
+has closed stdin), then `npx vercel link --yes` and `npx vercel --prod`. There is
+no non-interactive path without `VERCEL_TOKEN`, `~/.vercel/auth.json`,
+`%LOCALAPPDATA%/com.vercel.cli/auth.json` or a `.vercel/project.json` link — check
+all four before promising a deploy.
+
+## Never hardcode a secret into a tracked file, even "just for a test"
+
+`scripts/` is tracked. A verification script that needs a real token must read it
+from `process.env` or `.env` (gitignored), never a literal — a literal is
+committed on the very next `git add`. `scripts/verify-access-token.ps1` follows
+this: token from env, falling back to parsing `.env`, and it exits with a clear
+message when neither is present.
+
+`APP_ACCESS_TOKEN` is invented, not issued — `config.ts` takes any non-empty
+`APP_ACCESS_TOKEN` and `lib/auth.ts` constant-time compares it against the
+`Bearer` header. Empty string becomes `null`, which disables the gate. Setting it
+in the server env is **not enough**: the browser asks for it at runtime in the
+settings drawer (`SettingsDrawer.tsx`) and stores it in localStorage, because
+`VITE_APP_ACCESS_TOKEN` is deliberately unread — inlining it would ship the
+secret to every visitor.
