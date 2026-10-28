@@ -37,7 +37,16 @@ export interface ReplyLiveness {
 }
 
 const DEFAULT_TTL_MS = 5_000;
-const DEFAULT_TIMEOUT_MS = 800;
+/**
+ * Generous on purpose. A *cold* Ollama answers the first `/v1/models` call in
+ * ~2 s on this machine (measured 2026-10-28: the 2 s probe in
+ * `scripts/check-config.mjs` timed out, then answered instantly when warm), and
+ * a short timeout would report "stopped" for a server that is merely starting —
+ * the same lie this probe exists to avoid, in the opposite direction. The answer
+ * is cached for 5 s and concurrent polls are coalesced, so this cost is paid at
+ * most once per TTL.
+ */
+const DEFAULT_TIMEOUT_MS = 3_000;
 
 /** Node puts the syscall reason on `cause`; `ECONNREFUSED` is the common one. */
 function describeError(error: unknown): string {
@@ -92,13 +101,64 @@ export function createReplyLiveness(
         signal: AbortSignal.timeout(timeoutMs),
       });
       // Drain so the socket is not kept alive on a long-lived server process.
-      await response.text().catch(() => '');
+      const body = await response.text().catch(() => '');
+
+      // A listening port is NOT the same as a usable model. Ollama answers
+      // /v1/models with `data: null` when nothing has been pulled, so probing
+      // only for an HTTP answer reported "ready" while every reply quietly
+      // came from the safe fallback. Only claim reachable when the configured
+      // model actually appears in the list.
+      // `null` = could not read a model list at all (401, plain-text error, ...).
+      // That still proves something is bound to the port, so stay permissive.
+      let listed: string[] | null = null;
+      try {
+        const parsed: unknown = JSON.parse(body);
+        const data = (parsed as { data?: unknown } | null)?.data;
+        if (data === null) {
+          listed = [];
+        } else if (Array.isArray(data)) {
+          listed = data
+            .map((entry) => (entry as { id?: unknown } | null)?.id)
+            .filter((id): id is string => typeof id === 'string');
+        }
+      } catch {
+        listed = null;
+      }
+
+      const wantsModel = config.aiModel.trim();
+      // `qwen2.5:3b` and `qwen2.5:3b-instruct` are the same installed model, so
+      // compare base *and* tag rather than the whole string. Comparing only the
+      // part before the colon was wrong in the other direction: it made
+      // `qwen2.5:7b-instruct` count as a match for a configured `3b`, and that
+      // model answers the app's request with a 404.
+      const splitName = (value: string): { base: string; tag: string } => {
+        const at = value.indexOf(':');
+        return at === -1
+          ? { base: value, tag: 'latest' }
+          : { base: value.slice(0, at), tag: value.slice(at + 1) };
+      };
+      const matchesConfigured = (id: string): boolean => {
+        if (id === wantsModel) return true;
+        const have = splitName(id);
+        const want = splitName(wantsModel);
+        if (have.base !== want.base) return false;
+        if (have.tag === want.tag) return true;
+        // A tag that extends the other at a `-` boundary, in either direction.
+        return have.tag.startsWith(`${want.tag}-`) || want.tag.startsWith(`${have.tag}-`);
+      };
+      const modelListed = listed === null ? null : listed.some(matchesConfigured);
+      const reachable = listed === null ? true : response.ok && modelListed === true;
+
       cached = {
         provider: config.aiProvider,
         model: config.aiModel,
         applicable: true,
-        reachable: true,
-        detail: '',
+        reachable,
+        detail: reachable
+          ? ''
+          : `The model server answered but ${wantsModel} is not installed (it lists: ${
+              listed && listed.length > 0 ? listed.join(', ') : 'nothing'
+            }). Run 'ollama pull ${wantsModel}' - see docs/LOCAL_MODEL.md.`,
         checkedAt: now(),
       };
     } catch (error) {

@@ -55,8 +55,42 @@ async function probe(label, url) {
 }
 
 console.log('--- live probes (this is what config alone cannot tell you) --');
+
+/**
+ * "The port answered" is not "the model is installed". Ollama 404s its bare
+ * base URL and answers /v1/models with {"data":null} when nothing is pulled,
+ * so a plain reachability check reports READY against an empty store.
+ */
+async function probeModel(label, baseUrl, model) {
+  const url = `${baseUrl.replace(/\/+$/, '')}/models`;
+  try {
+    // 2 s was measured too tight: a cold Ollama takes ~2 s for its first
+    // /v1/models answer on this machine and timed out into a false NOT ready.
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) {
+      console.log(`${label.padEnd(18)} NOT reachable (HTTP ${response.status} at /models)`);
+      return false;
+    }
+    const body = await response.json().catch(() => null);
+    const listed = Array.isArray(body?.data) ? body.data.map((m) => m?.id) : [];
+    if (listed.includes(model)) {
+      console.log(`${label.padEnd(18)} READY (${model} installed)`);
+      return true;
+    }
+    const seen = listed.length > 0 ? listed.join(', ') : 'none pulled';
+    console.log(`${label.padEnd(18)} NOT ready (${model} not installed; models: ${seen})`);
+    return false;
+  } catch (error) {
+    const code = error?.cause?.code ?? error?.name ?? 'unreachable';
+    console.log(`${label.padEnd(18)} NOT reachable (${code})`);
+    return false;
+  }
+}
+
 const ollamaUp =
-  config.aiProvider === 'local' ? await probe('reply model', config.aiBaseUrl) : null;
+  config.aiProvider === 'local'
+    ? await probeModel('reply model', config.aiBaseUrl, config.aiModel)
+    : null;
 
 if (config.sttProvider === 'whisper-cpp' && config.whisperMode === 'server') {
   await probe('whisper server', config.whisperServerUrl);

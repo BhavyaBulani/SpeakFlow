@@ -135,6 +135,44 @@ end-to-end `speech → suggestion` latency on a hosted key; any deployment.
 
 ## 6. Session log (newest first)
 
+### 2026-10-28 (sixth session)
+
+Resumed from `NEXT_STEPS.md` and closed its blocker, which turned out to be already
+half-closed.
+
+- **The interrupted pull had finished.** `curl /api/tags` lists
+  `qwen2.5:3b-instruct`, 1.93 GB — nothing to download. `ollama app.exe` was running
+  and holding `127.0.0.1:11434`; the earlier empty readings were a **cold start**,
+  not a missing model. `npm run check:config` now ends with **both halves READY**:
+  `speech -> transcript READY` and `transcript -> refined READY`.
+- **`check:config` flapped for the same reason:** the first run printed
+  `reply model NOT reachable (TimeoutError)` against a healthy server, then READY
+  once warm. A 2 s probe timeout is shorter than a cold Ollama's ~2 s answer.
+- **Fixed two real bugs in `src/server/services/replyLiveness.ts`** (committed code,
+  not new work):
+  1. The model-name matcher compared only the part **before** the colon, so a
+     configured `qwen2.5:3b-instruct` counted `qwen2.5:7b-instruct` as a match — a
+     model that answers the app's request with a 404, i.e. a "ready" verdict that
+     guarantees fallbacks. Now compares base **and** tag, allowing a `-` boundary
+     extension either way (`3b` ↔ `3b-instruct`).
+  2. `DEFAULT_TIMEOUT_MS` 800 → 3000 and the CLI probe 2000 → 5000: a cold start was
+     being reported as "stopped", the same lie in the opposite direction.
+- **`tests/replyLiveness.test.ts` was pinning the old bug** — "reports reachable when
+  the local endpoint answers" asserted `reachable: true` for `{"data":[]}`, a server
+  with **nothing pulled**. That is exactly the false-ready state. Rewritten to
+  require the configured model, plus three new cases: empty list → not reachable,
+  wrong model size → not reachable, bare `3b` tag → reachable. **7 tests → 10.**
+- **Verified this session:** `npx vitest run tests/replyLiveness.test.ts` 10/10;
+  `tsc --noEmit` clean; `eslint` clean on every touched file; full `npm test`
+  **214 tests / 11 files, all pass**; `npm run check:config` READY both halves;
+  `node scripts/probe-model.mjs` → HTTP 200 and real generated text
+  (*"I was thinking we could push the thing to Friday."*).
+- **Machine note:** free physical RAM was **723 MB of 16 GB** at session start. The
+  model answered anyway, but any timing measured today is under that load.
+- **Still not verified, unchanged:** a real human voice on a real call, headset
+  playback during capture, and any deployment. Nothing is marked Verified in
+  `docs/PLATFORM_STATUS.md` for that reason.
+
 ### 2026-10-26 (fifth session)
 
 Closed the honesty gap the fourth session recorded but deliberately did not fix,

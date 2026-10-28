@@ -30,6 +30,10 @@ speakflow-extension.zip
 .*.log
 .e2e-extension-profile/
 
+# Scratch prompt / planning notes - never part of the app or its history
+master_prompt.txt
+prompt_*.txt
+
 # Local whisper.cpp installs: hundreds of MB of binaries and models.
 # Recreated from docs/LOCAL_STT.md - never committed.
 .local-models/

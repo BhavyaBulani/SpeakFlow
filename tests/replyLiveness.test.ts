@@ -34,8 +34,14 @@ describe('reply model liveness probe', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('reports reachable when the local endpoint answers', async () => {
-    const fetchImpl = vi.fn(async () => new Response('{"data":[]}', { status: 200 }));
+  it('reports reachable only when the configured model is actually installed', async () => {
+    // The bug this replaces: an empty model list used to count as "reachable",
+    // which is exactly the state that made every reply arrive as safe_fallback
+    // while the UI claimed the model was fine.
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('{"data":[{"id":"qwen2.5:3b-instruct"}]}', { status: 200 }),
+    );
     const liveness = createReplyLiveness(localConfig(), {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
@@ -48,6 +54,44 @@ describe('reply model liveness probe', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     // The OpenAI-compatible model list is the probe: Ollama and LM Studio have it.
     expect(String((fetchImpl.mock.calls[0] as unknown[])[0])).toMatch(/\/v1\/models$/);
+  });
+
+  it('reports NOT reachable when the server is up but nothing is pulled', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{"data":[]}', { status: 200 }));
+    const liveness = createReplyLiveness(localConfig(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const state = await liveness.check();
+
+    expect(state.reachable).toBe(false);
+    expect(state.detail).toContain('qwen2.5:3b-instruct');
+    expect(state.detail).toContain('ollama pull');
+  });
+
+  it('does not accept a different size of the same model family', async () => {
+    // `qwen2.5:7b-instruct` is a different model and answers the app's request
+    // with a 404. An earlier version compared only the part before the colon,
+    // so it counted as a match.
+    const fetchImpl = vi.fn(
+      async () => new Response('{"data":[{"id":"qwen2.5:7b-instruct"}]}', { status: 200 }),
+    );
+    const liveness = createReplyLiveness(localConfig(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect((await liveness.check()).reachable).toBe(false);
+  });
+
+  it('accepts the base tag for the instruct model, which is the same blob', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('{"data":[{"id":"qwen2.5:3b"}]}', { status: 200 }),
+    );
+    const liveness = createReplyLiveness(localConfig(), {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect((await liveness.check()).reachable).toBe(true);
   });
 
   it('treats any HTTP answer as listening, including an auth error', async () => {
