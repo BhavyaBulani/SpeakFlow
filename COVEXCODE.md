@@ -182,22 +182,23 @@ cannot be driven by transcript text on that route. Never call the chunked route
 
 ## `gh` can hold two accounts, and the *active* one is what pushes
 
-`gh auth status` listed both `BhavyaBulani` and `BhavyaBulani08` from the
-keyring. The repo `BhavyaBulani/SpeakFlow` grants `BhavyaBulani` push and
-`BhavyaBulani08` **pull only**, so `git push` failed with
-`403 denied to BhavyaBulani08` while `gh auth status` looked perfectly healthy —
-the token was fine, it was just the wrong account.
+Two accounts can share one keyring. `gh auth status` then looks perfectly healthy
+while the **active** one lacks push rights on the target repo, and `git push`
+dies with `403 ... denied to <that-account>` — the token is fine, it is simply
+the wrong identity.
 
-Check the `Active account: true` line *and* the permissions before diagnosing a
-403:
+Read the `Active account: true` line *and* the permissions before diagnosing a 403:
 
 ```bash
 gh auth status
 gh api repos/OWNER/REPO --jq .permissions.push
 ```
 
-Fixing it needs `gh auth login` as the owner (or `gh auth switch`), not a new
-token for the same account. After the push, verify with
-`git diff --stat HEAD origin/main` (empty = identical) and
-`git ls-tree -r origin/main --name-only` — not with `gh api .../contents`, which
-404s on this repo even once the branch exists.
+Fixing it needs `gh auth login` as an account that can write the repo (or
+`gh auth switch`), not a fresh token for the same account.
+
+After the first push, verify the remote really has the tree with
+`git diff --stat HEAD origin/main` (empty output = identical) and
+`git ls-tree -r origin/main --name-only`. Do **not** use
+`gh api repos/OWNER/REPO/contents` — it 404s here even once the branch exists, so
+a 404 from it proves nothing about whether the push worked.
