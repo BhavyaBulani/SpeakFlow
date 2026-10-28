@@ -179,3 +179,25 @@ posts self-contained WAV chunks over HTTP and returns text only when each chunk
 closes — so there are **no interim partials**, and the provisional-reply path
 cannot be driven by transcript text on that route. Never call the chunked route
 "streaming". Details and the framing rules: `docs/STT_PROVIDERS.md`.
+
+## `gh` can hold two accounts, and the *active* one is what pushes
+
+`gh auth status` listed both `BhavyaBulani` and `BhavyaBulani08` from the
+keyring. The repo `BhavyaBulani/SpeakFlow` grants `BhavyaBulani` push and
+`BhavyaBulani08` **pull only**, so `git push` failed with
+`403 denied to BhavyaBulani08` while `gh auth status` looked perfectly healthy —
+the token was fine, it was just the wrong account.
+
+Check the `Active account: true` line *and* the permissions before diagnosing a
+403:
+
+```bash
+gh auth status
+gh api repos/OWNER/REPO --jq .permissions.push
+```
+
+Fixing it needs `gh auth login` as the owner (or `gh auth switch`), not a new
+token for the same account. After the push, verify with
+`git diff --stat HEAD origin/main` (empty = identical) and
+`git ls-tree -r origin/main --name-only` — not with `gh api .../contents`, which
+404s on this repo even once the branch exists.
