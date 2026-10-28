@@ -29,6 +29,13 @@ export interface AppBundle {
 export interface CreateAppOptions {
   config?: ServerConfig;
   overrides?: ServiceOverrides;
+  /**
+   * Serve the built SPA from this process. Defaults to on, which is what the
+   * single-service Render deployment wants. A serverless host serves the client
+   * from its own CDN, so it turns this off rather than shipping HTML inside the
+   * function bundle.
+   */
+  serveStatic?: boolean;
 }
 
 export function createApp(options: CreateAppOptions = {}): AppBundle {
@@ -154,7 +161,7 @@ export function createApp(options: CreateAppOptions = {}): AppBundle {
   // service can host the whole app. Vercel-only deployments skip this branch.
   const clientDir = path.resolve(process.cwd(), 'dist', 'client');
   const indexHtml = path.join(clientDir, 'index.html');
-  if (existsSync(indexHtml)) {
+  if (options.serveStatic !== false && existsSync(indexHtml)) {
     app.use(
       express.static(clientDir, {
         index: false,
