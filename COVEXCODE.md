@@ -321,5 +321,79 @@ returns "tenant/user ... not found" everywhere except the correct one.
 self-contained (`CREATE TABLE IF NOT EXISTS`, `INSERT ... ON CONFLICT ...
 RETURNING`, `SELECT`) — no named prepared statements, no session-level `SET`.
 
-A green probe also shows the shared budget is real: `used` climbed 1 → 2 across
+A green probe shows the shared budget is real: `used` climbed 1 → 2 across
 two separate processes, which a per-instance counter cannot do.
+
+## The Vercel function entry must import the bundle, not the source
+
+`api/index.ts` imports `../dist/server/serverless.js`. It must not import
+`../src/server/serverless`. Vercel's TypeScript step compiles `api/index.ts`
+**on its own** and keeps the relative specifier verbatim, so the shipped file
+contains an extensionless path (`/var/task/src/server/serverless`) that Node's
+ESM resolver cannot resolve. Every invocation then dies with
+`ERR_MODULE_NOT_FOUND` before the handler runs.
+
+The failure mode is nasty because the build succeeds, the SPA serves 200 from the
+CDN, and only `/api/*` returns `FUNCTION_INVOCATION_FAILED` — the deploy log says
+`Build Completed` and looks clean. Read `vercel logs <url>`, not the build log.
+
+- `scripts/build-server.mjs` emits **two** bundles: `index.js` (long-running,
+  `npm start`) and `serverless.js` (Vercel). `vercel.json`'s `buildCommand` must
+  run `build:server` before `build:web` or the file the function imports is absent.
+- This project deliberately uses extensionless imports everywhere (one tsconfig
+  for `src/shared`), which esbuild resolves and Vercel's per-file emit does not.
+  Keep the bundling; don't "fix" the imports by adding `.js` extensions.
+- `api/` is outside tsconfig's `include`, so `typecheck` will not catch a broken
+  specifier there. `.data/check-serverless-bundle.mjs` loads the built bundle and
+  asserts it exports a function, which is cheaper than a deploy to find out.
+
+## `NODE_ENV=production` as a Vercel env var breaks the build
+
+Setting it in Project Settings makes `npm ci` skip devDependencies, so
+`vite build` fails with `Command "npm run build:web" exited with 127` — 127 is
+"command not found", not a build error. Do not set `NODE_ENV` in Vercel; the
+platform sets it for the build already.
+
+## `vercel link` refuses a classic `vercel.json` on CLI 50+
+
+The Vercel CLI with `--yes` auto-detects this layout (Vite root + `api/`) as two
+"services" and then rejects the config:
+
+```
+The top-level properties functions, installCommand, buildCommand,
+outputDirectory, framework cannot be used with `services`
+```
+
+There is no opt-out (`VERCEL_SERVICES`, `SKIP_SERVICES`, `DISABLE_SERVICES` are
+not read). The workaround needs no config change:
+
+```
+vercel project add <name>
+vercel link --yes --project <name>
+```
+
+Linking to a project that already exists skips the create-flow detection that
+raises the error. `--prod` then deploys the classic config fine, because the
+deploy path is gated on `VERCEL_USE_EXPERIMENTAL_SERVICES` /
+`hasExperimentalServicesConfig` and this repo sets neither.
+
+Related: CLI 59 stores auth in the Windows credential store, not
+`~/.vercel/auth.json`, so an older CLI cannot reuse it — `vercel@39` reports
+`No existing credentials found`. If a pre-services CLI is ever needed, login must
+be redone with that exact version.
+
+## Shell traps hit while deploying (all through `cmd /C`)
+
+- `findstr /C:"a" /C:"b" /C:"c"` honours only the first pattern and then tries
+  to open the rest as files (`FINDSTR: Cannot open /C:"b"`). Redirect full output
+  to a `.log` and read the file, or use `grep_search`.
+- `curl -w "%%{http_code}"` arrives mangled. Get status codes from a `.mjs`
+  script using `fetch` instead.
+- `node --input-type=module -e "import ..."` has its quotes destroyed. Put the
+  snippet in a file.
+- Spawning `npx.cmd` from `spawnSync` without `shell: true` throws `EINVAL` on
+  Node 20+, and `shell: true` would mangle values containing URL characters. Call
+  the CLI entry directly: `spawnSync(process.execPath, [vcEntry, ...args])`.
+- A `npm install --prefix` into a directory that already holds another install
+  can leave a half-pruned tree (`Cannot find module 'xdg-app-paths/src/lib/index.js'`).
+  Install into a fresh directory instead of reusing one.

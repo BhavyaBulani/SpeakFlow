@@ -21,7 +21,12 @@ AI_PROVIDER=local             # needs Ollama on that host
 
 - **Frontend + API**: Vercel. `api/index.ts` is the serverless entry; it builds
   the same Express app as `src/server/index.ts` without binding a port and
-  without serving static files.
+  without serving static files. It imports **`dist/server/serverless.js`**, not
+  the TypeScript source: Vercel compiles `api/index.ts` on its own and leaves
+  relative specifiers verbatim, so a `../src/...` import reaches the function as
+  an extensionless path that Node cannot resolve (`ERR_MODULE_NOT_FOUND`, only
+  `/api/*` fails, the build still says `Build Completed`). `vercel.json` therefore
+  runs `npm run build:server` before `build:web`.
 - **Database**: Postgres (Neon, Supabase, Render). Required — see below.
 - **Recogniser and reply model**: hosted, i.e. Groq's free tier. The local ones
   cannot be uploaded.
@@ -121,6 +126,16 @@ npx vercel --prod         # production
 Set the environment variables in the Vercel dashboard (Project → Settings →
 Environment Variables), then redeploy — variables are read at runtime, but a
 deployment created before they existed keeps the old values.
+
+Two mistakes worth not repeating:
+
+- **Do not set `NODE_ENV=production`.** It makes `npm ci` skip devDependencies,
+  so `vite` is missing and the build dies with `Command "npm run build:web"
+  exited with 127` — 127 is "command not found", not a build error. Vercel sets
+  `NODE_ENV` for the build itself.
+- `DATABASE_URL` must be the **pooler** host with the password percent-encoded
+  (`#` → `%23`); the direct Supabase host is IPv6-only and unreachable from a
+  function. See `COVEXCODE.md`.
 
 Verify after deploying, in this order:
 

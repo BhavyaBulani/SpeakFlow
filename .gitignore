@@ -56,3 +56,8 @@ NEXT_STEPS.md
 # Local scratch output from verification runs
 .verify*.log
 bench-*.log
+
+# Vercel CLI link state. `.env.local` is already ignored above; the CLI's own
+# broader `.env*` rule was dropped because it shadows the `!.env.example`
+# exception near the top of this file.
+.vercel/
