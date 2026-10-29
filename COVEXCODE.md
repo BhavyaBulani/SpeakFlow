@@ -237,3 +237,49 @@ in the server env is **not enough**: the browser asks for it at runtime in the
 settings drawer (`SettingsDrawer.tsx`) and stores it in localStorage, because
 `VITE_APP_ACCESS_TOKEN` is deliberately unread — inlining it would ship the
 secret to every visitor.
+
+## A Groq key is not automatically the model the preset names
+
+`AI_PROVIDER_PRESETS.groq` defaults to `llama-3.3-70b-versatile`. A free-tier key
+may not have that model at all: the call 404s `model_not_found`, `replyEngine`
+labels it `safe_fallback`, and the UI shows a holding line. That reads as "the
+model is bad", not "the model is absent" — the same failure shape as the stale
+zod enum trap above. `GET https://api.groq.com/openai/v1/models` with the key is
+the only honest answer for a given account. The 2026-10-29 key saw 11 models,
+with no Llama chat model on the list.
+
+Measured with the real engine on that key:
+
+| Model | Latency | Result |
+|---|---|---|
+| `qwen/qwen3.8-27b` | 396–618 ms | 5/5 answered, then 429 on ITPM |
+| `openai/gpt-oss-20b` | 1832 ms | 2/4 — `json_validate_failed` |
+| `openai/gpt-oss-120b` | 1301 ms | 2/4 — `json_validate_failed` |
+
+- **The `gpt-oss` models fail Groq's `json_object` mode intermittently** (400
+  `json_validate_failed`) on a prompt they answered moments earlier. On a live
+  call that is a random holding line, so they are not a safe default.
+- **`qwen/qwen3.8-27b` is the default now**, but its free tier caps **ITPM 7020**:
+  four rapid replies exhausted it and the fifth returned 429 `AI_RATE_LIMITED`.
+  Degradation is correct and labelled, but a rapid demo can hit it.
+
+`npm run check:config` does **not** catch any of this — it only probes `local`
+providers, so its section reads `aiConfigured yes` against a model that 404s.
+Verify a hosted key by driving the real pipeline: `.data/probe-groq.mjs`
+(gitignored, reads the key from `.env`) does exactly that.
+
+## Supabase's API keys are not a `DATABASE_URL`
+
+Supabase hands out a project URL (`https://<ref>.supabase.co`), an `anon` JWT and
+an `sb_secret_...` key. All three are for the Supabase client SDK / PostgREST and
+are **unused** by this app. `DATABASE_URL` goes straight to `pg`'s
+`connectionString` (`services/index.ts` → `createPgPool`), so it must be the
+Postgres URI from Dashboard → Project Settings → Database → Connection pooling:
+
+```
+postgresql://postgres.<ref>:<DB PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres
+```
+
+`<DB PASSWORD>` is set when the project is created and is **not** any of those
+three keys. Pasting the project URL in yields a connect failure, not a complaint
+about the shape of the value.

@@ -9,6 +9,12 @@ coverage/
 .env.*.local
 !.env.example
 
+# Ad hoc scratch files holding pasted credentials (a key copied out of a
+# provider dashboard). `.env` is the one file dotenv reads; these are
+# throwaway, easy to forget, and were nearly committed once.
+env*.txt
+*.env.txt
+
 # Local runtime data (vocabulary persistence, logs)
 .data/
 *.log
