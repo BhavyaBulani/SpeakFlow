@@ -419,7 +419,9 @@ Get the real one from `.env`'s `CORS_ORIGINS`, `.data/check-http*.mjs` or
 Verify a deployment with `node .data/probe-deploy.mjs <base>`: it prints status
 **and body** for `/`, `/api/config`, `/api/health`, `/api/vocabulary`. Compare
 the `<title>` and asset hashes against `dist/client/index.html` before believing
-a 200 came from this repo.
+a 200 came from this repo. Both probe scripts originally defaulted to the bare
+`speakflow-ai` host, so they reported "no API here" against a perfectly healthy
+deployment — the defaults are now `-six`, but pass the base explicitly anyway.
 
 ## `tests/serverless.test.ts` fails standalone, and it is not the load flake
 
@@ -435,3 +437,30 @@ before the assertions even start); the remaining six run in ~200 ms. The fix is
 a per-test timeout for that one case, not a smaller import.
 
 Also: `PROGRESS.md` still claims 251 green — re-run before quoting the number.
+
+## Purging a leaked credential from history, and what a rescan hides
+
+The Supabase password leaked because the doc showed the **raw** value with a
+literal `#`, so needles derived from `.env`'s percent-encoded `%23` form matched
+nothing and the first scan came back clean. Derive every form — raw, encoded, and
+the `:pw@` userinfo span — and treat "not found" as a reason to re-derive, not as
+proof.
+
+`git filter-branch` details that cost time (`.data/rewrite-history.cmd`):
+
+- It `eval`s the filter in **sh**, so a Windows path in `--tree-filter` loses its
+  backslashes. The wrapper forwards the path with `/` separators; that is the
+  only reason it runs.
+- Replace **per form**: `:pw@` → `:<PASSWORD>@` and bare `pw` → `<PASSWORD>`. One
+  needle list sorted longest-first eats the `:` and `@` and silently corrupts the
+  documented URL.
+- A rescan right afterwards still reports the old commits, because
+  `git rev-list --all` includes `refs/original/*`. Scope the check to the branch,
+  then delete those refs, `git reflog expire --expire=now --all`, `git gc
+  --prune=now`. Only then is `--all` a real check.
+- Prove content did not change: `git diff --stat <old-tip> HEAD` empty, then
+  `git push --force-with-lease=main:<old-tip>`.
+
+A force-push is not erasure: GitHub can still serve an unreachable commit by SHA
+until it collects it, and any fork or PR ref keeps it alive. Rotate the credential
+first; the rewrite is tidying, not containment.
