@@ -285,7 +285,7 @@ three keys. Pasting the project URL in yields a connect failure, not a complaint
 about the shape of the value.
 
 **Percent-encode the password.** A `#` in it is a URI *fragment* delimiter, so
-`...:<PASSWORD>@db...` does not parse at all (`ERR_INVALID_URL` from `pg`) and a
+`...<REDACTED>db...` does not parse at all (`ERR_INVALID_URL` from `pg`) and a
 `@` or `?` truncates it in ways that look correct in the file. Write `#` as `%23`.
 The tell is a URL that looks right in `.env` and refuses to connect; the real
 password is whatever `decodeURIComponent(new URL(url).password)` returns.
@@ -401,3 +401,37 @@ be redone with that exact version.
 - A `npm install --prefix` into a directory that already holds another install
   can leave a half-pruned tree (`Cannot find module 'xdg-app-paths/src/lib/index.js'`).
   Install into a fresh directory instead of reusing one.
+
+## The live URL is `speakflow-ai-six`, NOT `speakflow-ai`
+
+The production deployment is **https://speakflow-ai-six.vercel.app**. The bare
+`speakflow-ai.vercel.app` is a **different, unrelated app** — a vanilla-JS
+"English grammar tutor for Tamil speakers" (manifest says so, `#app` root,
+Font Awesome + Chart.js, Inter/Poppins). Probing it returns 200 for `/` and a
+Vercel `NOT_FOUND` for every `/api/*` route, which reads exactly like "this
+project is not deployed".
+
+The `-six` suffix is there because the plain name was already taken, so
+`.vercel/project.json`'s `projectName: "speakflow-ai"` is **not** the hostname.
+Get the real one from `.env`'s `CORS_ORIGINS`, `.data/check-http*.mjs` or
+`.data/set-cors.mjs` rather than guessing the project name.
+
+Verify a deployment with `node .data/probe-deploy.mjs <base>`: it prints status
+**and body** for `/`, `/api/config`, `/api/health`, `/api/vocabulary`. Compare
+the `<title>` and asset hashes against `dist/client/index.html` before believing
+a 200 came from this repo.
+
+## `tests/serverless.test.ts` fails standalone, and it is not the load flake
+
+`npm test` reports **250/251**: `serverless entry > builds the app without
+binding a port` hits `Test timed out in 5000ms`. Unlike the `ui.test.tsx` flake
+above, this one **reproduces when the file is run alone** (7028 ms against the
+5 s budget), so do not dismiss it as memory pressure.
+
+Cause: it is the first test in the file, and `vi.resetModules()` in `afterEach`
+means every test re-imports `src/server/serverless`. The *first* import pays the
+whole TypeScript transform of the server graph (~3.5 s of `serverless.ready`
+before the assertions even start); the remaining six run in ~200 ms. The fix is
+a per-test timeout for that one case, not a smaller import.
+
+Also: `PROGRESS.md` still claims 251 green — re-run before quoting the number.
