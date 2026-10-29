@@ -216,11 +216,18 @@ It errors with "a deployment could not be started this turn. It has to be the
 only tool call in the turn" even when it genuinely is the only call, with no
 prose around it. Retrying does not clear it (seen 5x in one session).
 
-Fallback: `npx vercel login` (interactive — the user must run it; a tool command
-has closed stdin), then `npx vercel link --yes` and `npx vercel --prod`. There is
-no non-interactive path without `VERCEL_TOKEN`, `~/.vercel/auth.json`,
-`%LOCALAPPDATA%/com.vercel.cli/auth.json` or a `.vercel/project.json` link — check
-all four before promising a deploy.
+Fallback that actually works on this machine: `npx --yes vercel@59 <cmd>`. CLI 59
+keeps its login in the Windows **credential store**, so
+`npx --yes vercel@59 whoami` answers with the account even though
+`%LOCALAPPDATA%\com.vercel.cli\auth.json` does not exist — an absent `auth.json`
+proves nothing about whether you are signed in. `.vercel/project.json` is enough
+for `npx --yes vercel@59 --prod --yes`; no `link` step is needed.
+
+Do **not** `npm install vercel@59 --prefix .data/vcli2` and call `dist/vc.js`
+directly. That tree comes out incomplete under OneDrive: `dist/vc.js` is not there
+at all, and `@vercel/blob` imports `is-node-process/lib/index.mjs`, which the
+installed version does not ship. The entry dies with `MODULE_NOT_FOUND` before it
+reads any arguments.
 
 ## Never hardcode a secret into a tracked file, even "just for a test"
 
@@ -294,6 +301,31 @@ password is whatever `decodeURIComponent(new URL(url).password)` returns.
 `.data/probe-db-app.mjs` drives the real `SessionStore`/`AiBudget` against it —
 create a session, read it back, reserve one budget notch — so a green result
 means the app's stores work, not merely that a socket opened.
+
+### Rotating the password breaks the two places that store it
+
+A reset in the Supabase dashboard changes nothing on disk: `.env` and the Vercel
+`DATABASE_URL` both keep the old value, and the app keeps returning 200. The
+deployed symptom is easy to misread because `/api/health` still says
+`status: "ok"` — look for `activeSessions: null` **together with**
+`budget.degraded: true`. That pair means the DB credential is wrong (sessions
+cannot be counted, so the daily cap goes unenforced), not that the app is down.
+
+Read the error codes as distinct, because they are:
+
+| Error | Meaning |
+|---|---|
+| `ERR_INVALID_URL` | value is unparseable — almost always a raw `#` |
+| `28P01` | parses fine, password rejected |
+| `ENOTFOUND` | hostname not resolvable on this network path |
+| `XX000 tenant/user ... not found` | wrong pooler **region** |
+
+Two helpers repair it without printing the secret: `.data/inspect-db-url.mjs
+--fix` percent-encodes the password in place, and `.data/set-db-url.mjs <pooler>`
+switches the direct host to the pooler and scrubs commented-out copies of the URL
+— a commented `# DATABASE_URL=...` still holds the plaintext in a OneDrive-synced
+file, which is exactly where nobody looks. `.data/find-pooler.mjs` discovers the
+region by trying them all; this project is on `aws-0-eu-west-2`.
 
 ### The direct Supabase host is IPv6-only, so Vercel cannot use it
 
@@ -396,11 +428,15 @@ be redone with that exact version.
 - `node --input-type=module -e "import ..."` has its quotes destroyed. Put the
   snippet in a file.
 - Spawning `npx.cmd` from `spawnSync` without `shell: true` throws `EINVAL` on
-  Node 20+, and `shell: true` would mangle values containing URL characters. Call
-  the CLI entry directly: `spawnSync(process.execPath, [vcEntry, ...args])`.
-- A `npm install --prefix` into a directory that already holds another install
-  can leave a half-pruned tree (`Cannot find module 'xdg-app-paths/src/lib/index.js'`).
-  Install into a fresh directory instead of reusing one.
+  Node 20+, and `shell: true` would mangle values containing URL characters. From
+  a real shell that problem disappears, so the reliable call is
+  `npx --yes vercel@59 <cmd>` through `cmd /C` — not `spawnSync`, and not an
+  `--prefix` install (that tree comes out broken; see the deploy section above).
+- To set a value containing `%23`, never put it on the command line. Write it to
+  a gitignored file with no trailing newline, then
+  `npx --yes vercel@59 env rm KEY production --yes` followed by
+  `npx --yes vercel@59 env add KEY production < .data\value.txt`. Delete the file
+  afterwards. `NODE_ENV` must never be added this way — see below.
 
 ## The live URL is `speakflow-ai-six`, NOT `speakflow-ai`
 
@@ -464,3 +500,9 @@ proof.
 A force-push is not erasure: GitHub can still serve an unreachable commit by SHA
 until it collects it, and any fork or PR ref keeps it alive. Rotate the credential
 first; the rewrite is tidying, not containment.
+
+Purging whole files rather than a string is cheaper: `--index-filter "git rm
+--cached --ignore-unmatch <paths>"` with `--prune-empty` rewrites the index only,
+so 20 commits take ~12 s with no checkout at all. Local copies survive because the
+paths are gitignored and already untracked, so only history changes —
+`git diff --stat <old-tip> main` still comes back empty.
