@@ -295,7 +295,31 @@ password is whatever `decodeURIComponent(new URL(url).password)` returns.
 create a session, read it back, reserve one budget notch — so a green result
 means the app's stores work, not merely that a socket opened.
 
-Note the two Supabase host shapes. `db.<ref>.supabase.co:5432` is the **direct**
-connection and is what was measured working on 2026-10-29 (PostgreSQL 17.11). The
-pooler (`aws-0-<region>.pooler.supabase.com:6543`, user `postgres.<ref>`) is the
-better choice for a serverless host, which opens a connection per instance.
+### The direct Supabase host is IPv6-only, so Vercel cannot use it
+
+`db.<ref>.supabase.co` resolves to a **single IPv6 address** (`2a05:d01c::/32`).
+It connects fine from a laptop and fails on Vercel, whose functions are IPv4-only
+— and it fails as a connect timeout, which reads like a wrong password or a paused
+project rather than a network-family mismatch.
+
+Always use the pooler for a deployed app:
+
+```
+postgresql://postgres.<ref>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres
+```
+
+- port **6543 = transaction mode** (one connection per request — right for
+  serverless); 5432 is session mode on the same host
+- the user is **`postgres.<ref>`**, not plain `postgres`
+- it resolves to real IPv4 addresses, as it must
+
+`<region>` is discoverable without opening the dashboard: a pooler answers only
+for tenants in its own region, so probing candidate hosts with the real password
+returns "tenant/user ... not found" everywhere except the correct one.
+`.data/find-pooler.mjs` does exactly that (34 candidates; this project is
+`aws-0-eu-west-2`). Transaction mode is safe here because every statement is
+self-contained (`CREATE TABLE IF NOT EXISTS`, `INSERT ... ON CONFLICT ...
+RETURNING`, `SELECT`) — no named prepared statements, no session-level `SET`.
+
+A green probe also shows the shared budget is real: `used` climbed 1 → 2 across
+two separate processes, which a per-instance counter cannot do.
