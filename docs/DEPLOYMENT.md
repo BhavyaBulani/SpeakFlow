@@ -19,14 +19,15 @@ AI_PROVIDER=local             # needs Ollama on that host
 
 ## B. Split (Vercel + a hosted database) — what a public URL needs
 
-- **Frontend + API**: Vercel. `api/index.ts` is the serverless entry; it builds
+- **Frontend + API**: Vercel. `api/index.js` is the serverless entry; it builds
   the same Express app as `src/server/index.ts` without binding a port and
   without serving static files. It imports **`dist/server/serverless.js`**, not
-  the TypeScript source: Vercel compiles `api/index.ts` on its own and leaves
+  the TypeScript source: Vercel compiles `api/` entries on their own and leaves
   relative specifiers verbatim, so a `../src/...` import reaches the function as
   an extensionless path that Node cannot resolve (`ERR_MODULE_NOT_FOUND`, only
-  `/api/*` fails, the build still says `Build Completed`). `vercel.json` therefore
-  runs `npm run build:server` before `build:web`.
+  `/api/*` fails, the build still says `Build Completed`). It is `.js` rather
+  than `.ts` so that step has no declaration file to look for. `vercel.json`
+  therefore runs `npm run build:server` before `build:web`.
 - **Database**: Postgres (Neon, Supabase, Render). Required — see below.
 - **Recogniser and reply model**: hosted, i.e. Groq's free tier. The local ones
   cannot be uploaded.

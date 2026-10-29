@@ -326,17 +326,21 @@ two separate processes, which a per-instance counter cannot do.
 
 ## The Vercel function entry must import the bundle, not the source
 
-`api/index.ts` imports `../dist/server/serverless.js`. It must not import
-`../src/server/serverless`. Vercel's TypeScript step compiles `api/index.ts`
-**on its own** and keeps the relative specifier verbatim, so the shipped file
-contains an extensionless path (`/var/task/src/server/serverless`) that Node's
-ESM resolver cannot resolve. Every invocation then dies with
-`ERR_MODULE_NOT_FOUND` before the handler runs.
+`api/index.js` imports `../dist/server/serverless.js`. It must not import
+`../src/server/serverless`. Vercel's build compiles `api/` entries **on their own**
+and keeps relative specifiers verbatim, so the shipped file contains an
+extensionless path (`/var/task/src/server/serverless`) that Node's ESM resolver
+cannot resolve. Every invocation then dies with `ERR_MODULE_NOT_FOUND` before the
+handler runs.
 
 The failure mode is nasty because the build succeeds, the SPA serves 200 from the
 CDN, and only `/api/*` returns `FUNCTION_INVOCATION_FAILED` — the deploy log says
 `Build Completed` and looks clean. Read `vercel logs <url>`, not the build log.
 
+- The entry is **`.js`, not `.ts`** on purpose. As `.ts` the same build reported
+  `TS7016: Could not find a declaration file for module '../dist/server/…'`
+  (Vercel type-checks the entry) and then deployed anyway; a plain `.js` shim has
+  no such check because it has no types to look for.
 - `scripts/build-server.mjs` emits **two** bundles: `index.js` (long-running,
   `npm start`) and `serverless.js` (Vercel). `vercel.json`'s `buildCommand` must
   run `build:server` before `build:web` or the file the function imports is absent.
