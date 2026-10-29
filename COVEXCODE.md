@@ -283,3 +283,19 @@ postgresql://postgres.<ref>:<DB PASSWORD>@aws-0-<region>.pooler.supabase.com:654
 `<DB PASSWORD>` is set when the project is created and is **not** any of those
 three keys. Pasting the project URL in yields a connect failure, not a complaint
 about the shape of the value.
+
+**Percent-encode the password.** A `#` in it is a URI *fragment* delimiter, so
+`...:<PASSWORD>@db...` does not parse at all (`ERR_INVALID_URL` from `pg`) and a
+`@` or `?` truncates it in ways that look correct in the file. Write `#` as `%23`.
+The tell is a URL that looks right in `.env` and refuses to connect; the real
+password is whatever `decodeURIComponent(new URL(url).password)` returns.
+
+`.data/probe-db.mjs` prints that decoded length plus the host, and
+`.data/probe-db-app.mjs` drives the real `SessionStore`/`AiBudget` against it —
+create a session, read it back, reserve one budget notch — so a green result
+means the app's stores work, not merely that a socket opened.
+
+Note the two Supabase host shapes. `db.<ref>.supabase.co:5432` is the **direct**
+connection and is what was measured working on 2026-10-29 (PostgreSQL 17.11). The
+pooler (`aws-0-<region>.pooler.supabase.com:6543`, user `postgres.<ref>`) is the
+better choice for a serverless host, which opens a connection per instance.
