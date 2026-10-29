@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
@@ -22,6 +23,13 @@ import { chromium } from 'playwright';
  */
 
 const BASE = 'http://localhost:8787';
+
+// When .env sets APP_ACCESS_TOKEN the server gates every /api/* route, so a
+// browser holding no token gets 401 on each call and the whole pipeline reports
+// "unavailable" — which looks like a reply-engine regression rather than a
+// missing credential. Supply the same token a user pastes into Settings; an
+// empty value means the gate is off and the run is identical to before.
+const ACCESS_TOKEN = (process.env.APP_ACCESS_TOKEN ?? '').trim();
 const results = [];
 const pass = (msg) => results.push(`PASS  ${msg}`);
 const fail = (msg) => results.push(`FAIL  ${msg}`);
@@ -98,19 +106,19 @@ try {
   });
 
   // Preselect the demo provider: no microphone, no provider key required.
-  await page.addInitScript(() => {
+  await page.addInitScript((token) => {
     window.localStorage.setItem(
       'speakflow.settings.v1',
       JSON.stringify({
         provider: 'simulated',
         captureMode: 'demo',
         tone: 'professional',
-        accessToken: '',
+        accessToken: token,
         userContext: '',
         showHindi: true,
       }),
     );
-  });
+  }, ACCESS_TOKEN);
 
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
 
@@ -259,19 +267,19 @@ try {
   // "Connecting" forever. It must say what is missing and how to fix it.
   const bridgeContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const bridgePage = await bridgeContext.newPage();
-  await bridgePage.addInitScript(() => {
+  await bridgePage.addInitScript((token) => {
     window.localStorage.setItem(
       'speakflow.settings.v1',
       JSON.stringify({
         provider: 'extension-bridge',
         captureMode: 'tab',
         tone: 'professional',
-        accessToken: '',
+        accessToken: token,
         userContext: '',
         showHindi: true,
       }),
     );
-  });
+  }, ACCESS_TOKEN);
 
   await bridgePage.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
   await bridgePage.getByRole('button', { name: /start live assistance/i }).click();
