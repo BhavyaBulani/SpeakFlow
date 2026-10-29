@@ -506,3 +506,33 @@ Purging whole files rather than a string is cheaper: `--index-filter "git rm
 so 20 commits take ~12 s with no checkout at all. Local copies survive because the
 paths are gitignored and already untracked, so only history changes —
 `git diff --stat <old-tip> main` still comes back empty.
+
+## The browser E2E needs the access token, or it fails like a broken pipeline
+
+`scripts/e2e-browser.mjs` used to hardcode `accessToken: ''` in the settings it
+seeds into localStorage, so it only ever ran against an **ungated** server. Once
+`.env` sets `APP_ACCESS_TOKEN`, `requireAccessToken` mounts and every `/api/*`
+call returns 401 — and the test reports five failures that all read like engine
+bugs: `unexpected pipeline stage "unavailable"`, both replies never appeared, no
+finalised segments, and `extension mode hung` (a cascade, not a second bug).
+
+The tell is `authRequired: true` in the spawned server's `startup.listening` log
+line plus `401 (Unauthorized)` in the console-error line. Compounding it: `.env`
+is loaded by the **server**, not by this test, so `process.env` in the test looked
+empty and the mismatch was invisible.
+
+It now reads `APP_ACCESS_TOKEN` itself (`import 'dotenv/config'`) and passes it
+to `addInitScript` as an argument, so the gated path production actually serves
+is what gets exercised, and an absent variable still yields `''` — identical to
+before for CI.
+
+### Port 8787 can be held by a leftover server, contradicting the reaping note
+
+The run aborts with `startup.port_in_use` before any assertion. Long-running
+processes usually do get reaped, but a `node dist/server/index.js` from an earlier
+session survived here and squatted the port for ~50 minutes. Find and identify it
+with `.data/check-port.ps1 -Port 8787` — a script file, because a `tasklist`
+`/FI` filter containing `PID eq <n>` and an inline `Get-CimInstance -Filter "..."`
+both lose their quotes through `cmd /C`. Then `taskkill /PID <pid> /F`. Nothing
+else frees it: the E2E owns its child server, so this is always an outside
+process.
